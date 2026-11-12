@@ -1,0 +1,8 @@
+## Interface: 16001
+## Title: CraftColors
+## Notes: Colors recipe names in the profession window by skill-up difficulty (orange / yellow / green / gray).
+## Author: quikmn
+## Version: 0.1.0
+## IconTexture: Interface\Icons\Trade_Engineering
+
+CraftColors.lua
