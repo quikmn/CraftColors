@@ -1,0 +1,6 @@
+package-as: CraftColors
+
+ignore:
+  - README.md
+  - tests
+  - .github
