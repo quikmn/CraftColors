@@ -4,6 +4,7 @@ WoW Forever (interface 16001). Colors recipe names in the profession window by s
 
 ![The Tailoring window with recipe names colored by difficulty: orange, yellow, green and gray](media/screenshot.png)
 ![Further down the same list: gloves, belts and leggings, each colored by difficulty](media/screenshot-2.png)
+![The Enchanting window: rods, oils and chest enchants colored by difficulty](media/screenshot-3.png)
 
 - `/craftcolors` prints the difficulty data for the selected recipe (debugging).
 - `/craftcolors feedback` shows a link for reporting bugs and ideas.
