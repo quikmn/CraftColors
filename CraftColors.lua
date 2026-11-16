@@ -95,9 +95,43 @@ f:SetScript("OnEvent", function(_, event, arg1)
     end
 end)
 
+-- Feedback link. Addons can't open a browser, so show the link selected in a box to copy.
+local FEEDBACK_URL = "https://everlookdb.com/craftcolors.html#feedback"
+StaticPopupDialogs["CRAFTCOLORS_FEEDBACK"] = {
+    text = "Report a bug or suggest an idea.\nPress Ctrl+C to copy the link, then paste it in your browser.",
+    button1 = CLOSE or "Close",
+    hasEditBox = true,
+    editBoxWidth = 320,
+    OnShow = function(self)
+        local eb = self.EditBox or self.editBox
+        if not eb then return end
+        eb:SetText(FEEDBACK_URL)
+        eb:SetFocus()
+        eb:HighlightText()
+    end,
+    EditBoxOnTextChanged = function(eb)
+        if eb:GetText() ~= FEEDBACK_URL then
+            eb:SetText(FEEDBACK_URL)
+            eb:HighlightText()
+        end
+    end,
+    EditBoxOnEnterPressed = function() StaticPopup_Hide("CRAFTCOLORS_FEEDBACK") end,
+    EditBoxOnEscapePressed = function() StaticPopup_Hide("CRAFTCOLORS_FEEDBACK") end,
+    timeout = 0,
+    whileDead = true,
+    hideOnEscape = true,
+    preferredIndex = 3,
+}
+
 -- /craftcolors : print the difficulty data for the selected recipe (for debugging).
+-- /craftcolors feedback : a link for reporting bugs and ideas.
 SLASH_CRAFTCOLORS1 = "/craftcolors"
-SlashCmdList.CRAFTCOLORS = function()
+SlashCmdList.CRAFTCOLORS = function(msg)
+    msg = (msg or ""):lower():match("^%s*(.-)%s*$")
+    if msg == "feedback" or msg == "bug" then
+        StaticPopup_Show("CRAFTCOLORS_FEEDBACK")
+        return
+    end
     local page = ProfessionsFrame and ProfessionsFrame.CraftingPage
     local form = page and page.SchematicForm
     local info = form and form.GetRecipeInfo and form:GetRecipeInfo()

@@ -3,6 +3,7 @@
 WoW Forever (interface 16001). Colors recipe names in the profession window by skill-up difficulty: orange, yellow, green, gray.
 
 - `/craftcolors` prints the difficulty data for the selected recipe (debugging).
+- `/craftcolors feedback` shows a link for reporting bugs and ideas.
 
 ## Install
 WowUp: pick **World of Warcraft: Forever**, then Get Addons → Install from URL, and paste `https://github.com/quikmn/CraftColors`.
