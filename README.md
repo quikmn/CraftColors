@@ -6,8 +6,10 @@ WoW Forever (interface 16001). Colors recipe names in the profession window by s
 ![Further down the same list: gloves, belts and leggings, each colored by difficulty](media/screenshot-2.png)
 ![The Enchanting window: rods, oils and chest enchants colored by difficulty](media/screenshot-3.png)
 
-- `/craftcolors` prints the difficulty data for the selected recipe (debugging).
-- `/craftcolors feedback` shows a link for reporting bugs and ideas.
+- `/craftcolors` opens the settings window: colouring on or off, your own colour for each difficulty, how much the row under the mouse brightens. It's also under Settings > AddOns.
+- `/craftcolors orange ff8040` (or `yellow`, `green`, `gray`, `enabled off`, `hover 0.3`) changes a setting from chat; `/craftcolors settings` lists them.
+- `/craftcolors check` prints what the game says about the selected recipe (handy for bug reports), `/craftcolors reset` puts the colours back.
+- `/craftcolors feedback` shows a link for reporting bugs and ideas. `/craftcolors help` lists every command.
 
 ## Install
 WowUp: pick **World of Warcraft: Forever**, then Get Addons → Install from URL, and paste `https://github.com/quikmn/CraftColors`.
