@@ -683,7 +683,7 @@ function UI.Dropdown(stack, opt)
 	arrow:SetText("v")
 	b:SetScript("OnEnter", function() bg:SetVertexColor(rgba(T.surfaceHi)) end)
 	b:SetScript("OnLeave", function() bg:SetVertexColor(rgba(T.surface)) end)
-	local function items() return type(opt.items) == "function" and opt.items() or opt.items end
+	local function items() if type(opt.items) == "function" then return opt.items() or {} end return opt.items or {} end
 	function f:Refresh()
 		local cur = opt.get()
 		local shown = cur == nil and (opt.placeholder or "Choose...") or (opt.format and opt.format(cur)) or tostring(cur)
@@ -847,7 +847,7 @@ function UI.CopyBox(stack, label, text)
 	local box = UI.EditBox(f, stack.width, 24)
 	box:SetPoint("TOPLEFT", 0, -18)
 	box:SetPoint("RIGHT")
-	local function value() return type(text) == "function" and text() or text end
+	local function value() if type(text) == "function" then return text() or "" end return text or "" end
 	box:SetScript("OnTextChanged", function(self)
 		if self:GetText() ~= value() then self:SetText(value()); self:HighlightText() end
 	end)
