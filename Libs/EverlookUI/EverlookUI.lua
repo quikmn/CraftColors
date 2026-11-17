@@ -15,7 +15,13 @@
 -- Widgets: Header, Note, Toggle, Slider, Dropdown, Color, Input, CopyBox, Stat, List, Button, ConfirmButton,
 -- ButtonRow, TextArea, ScrollPage. Bound widgets take { label, desc, get, set, disabled, after } and have :Refresh().
 -- The mouse wheel scrolls the page: sliders and dropdowns never take it. The page scroll bar is 12 px and draggable.
-local MAJOR, MINOR = "EverlookUI-1", 2
+--
+-- Search: every window has a search box at the top centre (Ctrl+F; Escape clears it, then closes the window).
+-- It finds settings (app:Widget), plain toggles, sliders, dropdowns, colour swatches and button rows on any
+-- page, by label, description, page and heading, a dropdown's value and choices, the chat-command name and
+-- optional keywords: app:Setting({ ..., keywords = { "opacity", "alpha" } }) or a widget's/button's opt.keywords.
+-- opt.search = false keeps a widget out. Results are the real controls, borrowed from their page while listed.
+local MAJOR, MINOR = "EverlookUI-1", 3
 local UI = LibStub:NewLibrary(MAJOR, MINOR)
 if not UI then return end
 UI.version = MINOR
@@ -215,10 +221,13 @@ function UI.CloseOnEscape(frame)
 	end)
 	frame:SetScript("OnKeyDown", function(self, key)
 		local esc = key == "ESCAPE"
-		if not InCombatLockdown() then self:SetPropagateKeyboardInput(not esc) end
+		-- frame.eluiKey(frame, key) -> true takes a key for the window (Ctrl+F); every other key reaches the game
+		local taken = not esc and self.eluiKey and self.eluiKey(self, key) and true or false
+		if not InCombatLockdown() then self:SetPropagateKeyboardInput(not esc and not taken) end
 		if not esc then return end
-		-- an open dropdown list closes first; the next Escape closes the window
+		-- an open dropdown list closes first, then frame.eluiEscape gets a go (a search clears); then the window closes
 		if UI.IsPopupShown and UI.IsPopupShown() then UI.ClosePopup() return end
+		if self.eluiEscape and self.eluiEscape(self) then return end
 		self:Hide()
 	end)
 end
@@ -235,6 +244,11 @@ function UI.Stack(parent, width, T)
 end
 
 function Stack:Place(e)
+	e.y = self.y
+	if e.borrowed then -- listed in search results right now: keep its room, leave it where it is
+		self.y = self.y + e.height + e.gap
+		return
+	end
 	local f = e.frame
 	f:ClearAllPoints()
 	f:SetPoint("TOPLEFT", self.parent, "TOPLEFT", e.indent, -self.y)
@@ -251,6 +265,7 @@ function Stack:Add(frame, height, gap, indent)
 	self:Place(e)
 	if frame.Refresh then self.widgets[#self.widgets + 1] = frame end
 	self.parent:SetHeight(self.y + self.T.pad)
+	if self.app and frame.searchInfo then self.app:IndexWidget(self, frame) end
 	return frame
 end
 
@@ -279,6 +294,16 @@ end
 
 function Stack:RefreshAll()
 	for _, w in ipairs(self.widgets) do w:Refresh() end
+	-- search results can list controls from other pages that depend on this one
+	if self.app and self.app.searching then self.app:RefreshBorrowed(self) end
+end
+
+-- What the search knows about a widget (see App:IndexWidget), from the widget's opt.
+local function SearchInfo(opt, extra)
+	if opt.search == false then return nil end
+	local info = { label = opt.label, desc = opt.desc, keywords = opt.keywords, key = opt.searchKey, chatLabel = opt.chatLabel }
+	if extra then for k, v in pairs(extra) do info[k] = v end end
+	return info
 end
 
 ------------------------------------------------------------------------
@@ -303,6 +328,7 @@ function UI.Header(stack, text, sub)
 		h = 34 + math.max(10, s:GetStringHeight())
 	end
 	stack:Space(stack.y > 0 and 8 or 0)
+	stack.searchHeader = text -- search results show "Page » Heading" for the rows under it
 	return stack:Add(f, h, 12)
 end
 
@@ -422,6 +448,19 @@ function UI.ButtonRow(stack, buttons)
 	if buttons.refresh then
 		function f:Refresh() buttons.refresh(f) end
 	end
+	if buttons.search ~= false then
+		local labels, descs, keys = {}, {}, {}
+		local function addKeys(k) for _, w in ipairs(type(k) == "table" and k or { k }) do keys[#keys + 1] = w end end
+		for _, d in ipairs(buttons) do
+			if type(d.label) == "string" then labels[#labels + 1] = d.label end
+			if d.desc then descs[#descs + 1] = d.desc end
+			addKeys(d.keywords)
+		end
+		addKeys(buttons.keywords)
+		if #labels > 0 then
+			f.searchInfo = { label = table.concat(labels, " / "), desc = #descs > 0 and table.concat(descs, " ") or nil, keywords = keys }
+		end
+	end
 	stack:Add(f, 26, 12)
 	if f.Refresh then f:Refresh() end
 	return f
@@ -479,6 +518,7 @@ function UI.Toggle(stack, opt)
 		if opt.after then opt.after() end
 	end)
 	Tooltip(f, opt.label, opt.desc)
+	f.searchInfo = opt.label and SearchInfo(opt)
 	stack:Add(f, 20)
 	f:Refresh()
 	return f
@@ -570,6 +610,7 @@ function UI.Slider(stack, opt)
 	end)
 	box:SetScript("OnEscapePressed", function(self) self:ClearFocus(); f:Refresh() end)
 	Tooltip(f, opt.label, opt.desc)
+	f.searchInfo = opt.label and SearchInfo(opt)
 	stack:Add(f, 40)
 	f:Refresh()
 	return f
@@ -703,6 +744,14 @@ function UI.Dropdown(stack, opt)
 		end)
 	end)
 	Tooltip(b, opt.label, opt.desc)
+	f.searchInfo = opt.label and SearchInfo(opt, {
+		value = function() return value:GetText() end,
+		choices = function()
+			local t = {}
+			for _, it in ipairs(items()) do if not it.title and it.text then t[#t + 1] = tostring(it.text) end end
+			return table.concat(t, " ")
+		end,
+	})
 	stack:Add(f, 44)
 	f:Refresh()
 	return f
@@ -754,6 +803,7 @@ function UI.Color(stack, opt)
 		end
 	end)
 	Tooltip(f, opt.label, opt.desc)
+	f.searchInfo = opt.label and SearchInfo(opt)
 	stack:Add(f, 20)
 	f:Refresh()
 	return f
@@ -831,6 +881,8 @@ function UI.Input(stack, opt)
 		end
 	end
 	Tooltip(box, opt.label, opt.desc)
+	-- a plain text box is usually data entry (a name, a filter), not a setting: only settings and opt-ins are found
+	if opt.label and (opt.searchKey or opt.keywords) then f.searchInfo = SearchInfo(opt) end
 	stack:Add(f, opt.label and 44 or 26)
 	if f.Refresh then f:Refresh() else updateHint() end
 	return f
@@ -1155,7 +1207,7 @@ function UI.ScrollPage(parent)
 	local child = CreateFrame("Frame", nil, scroll)
 	child:SetSize(1, 1)
 	scroll:SetScrollChild(child)
-	local track, update = AttachScrollBar(scroll, child, parent, PAGE_STEP)
+	local track, update, setScroll = AttachScrollBar(scroll, child, parent, PAGE_STEP)
 	track:SetPoint("TOPRIGHT", -3, -2)
 	track:SetPoint("BOTTOMRIGHT", -3, 2)
 	scroll:SetScript("OnSizeChanged", function(_, w)
@@ -1169,6 +1221,7 @@ function UI.ScrollPage(parent)
 	scroll.child = child
 	scroll.track = track
 	scroll.UpdateBar = update
+	scroll.SetScroll = setScroll
 	return scroll
 end
 
@@ -1216,6 +1269,210 @@ function UI.LinkWindow(name, T, intro, url)
 	f:SetScript("OnHide", function() box:ClearFocus() end)
 	UI.CloseOnEscape(f)
 	return f
+end
+
+------------------------------------------------------------------------
+-- Settings search: the matcher. Plain functions (no frames), tested offline.
+--   Search.Entry(info) -> an entry; info: label, chatLabel, desc, keywords (table or "a b c"), key (the chat
+--     command name), section, header, choices (text or fn), value (fn: the shown value, read at search time)
+--   Search.Match(entries, query, keep) -> { { entry, score }, ... } best first; keep(entry) filters
+--   Search.Suggest(entries, query, keep) -> a nearby query that finds something, or nil
+-- Matching ignores case and accents and works on word starts ("trans" finds "Transparent"); every word typed
+-- must match somewhere, in any order. A label match beats a description match; the whole label beats both.
+------------------------------------------------------------------------
+local Search = {}
+UI.Search = Search
+
+-- Accented letters to plain ones, and Cyrillic capitals to small (string.lower only knows A-Z).
+local FOLD = {}
+do
+	local groups = {
+		a = "ÀÁÂÃÄÅàáâãäåĀāĂăĄą", ae = "Ææ", c = "ÇçĆćĈĉĊċČč", d = "ÐðĎďĐđ", e = "ÈÉÊËèéêëĒēĔĕĖėĘęĚě",
+		g = "ĜĝĞğĠġĢģ", h = "ĤĥĦħ", i = "ÌÍÎÏìíîïĨĩĪīĬĭĮįİı", j = "Ĵĵ", k = "Ķķ", l = "ĹĺĻļĽľĿŀŁł",
+		n = "ÑñŃńŅņŇň", o = "ÒÓÔÕÖØòóôõöøŌōŎŏŐő", oe = "Œœ", r = "ŔŕŖŗŘř", s = "ŚśŜŝŞşŠš", ss = "ß",
+		t = "ŢţŤťŦŧ", th = "Þþ", u = "ÙÚÛÜùúûüŨũŪūŬŭŮůŰűŲų", w = "Ŵŵ", y = "ÝýÿŶŷŸ", z = "ŹźŻżŽž",
+	}
+	for to, chars in pairs(groups) do
+		for ch in chars:gmatch("[\192-\255][\128-\191]*") do FOLD[ch] = to end
+	end
+	for b = 0x90, 0x9F do FOLD["\208" .. string.char(b)] = "\208" .. string.char(b + 0x20) end -- А-П
+	for b = 0xA0, 0xAF do FOLD["\208" .. string.char(b)] = "\209" .. string.char(b - 0x20) end -- Р-Я
+	FOLD["\208\129"], FOLD["\209\145"] = "\208\181", "\208\181" -- Ё ё read as е
+end
+
+-- Lower case, no accents, no colour codes or textures, no apostrophes.
+function Search.Normalize(s)
+	s = tostring(s or "")
+	s = s:gsub("|c%x%x%x%x%x%x%x%x", ""):gsub("|r", ""):gsub("|T.-|t", " "):gsub("|A.-|a", " "):gsub("|n", " "):gsub("||", "|")
+	-- accents first, then A-Z only: string.lower follows the C locale and can mangle UTF-8 bytes
+	s = s:gsub("[\192-\255][\128-\191]*", FOLD)
+	s = s:gsub("[A-Z]+", string.lower)
+	s = s:gsub("'", ""):gsub("\226\128\153", "")
+	return s
+end
+
+local WORD = "[%w\128-\255]+"
+
+-- The words of a query, normalized.
+function Search.Terms(query)
+	local t = {}
+	for w in Search.Normalize(query):gmatch(WORD) do t[#t + 1] = w end
+	return t
+end
+
+-- How much a match in each part counts.
+Search.WEIGHT = { label = 10, key = 8, keywords = 7, section = 5, header = 5, value = 4, choices = 3, desc = 3 }
+local WEIGHT = Search.WEIGHT
+
+local function makeField(text, weight, whole)
+	if type(text) == "table" then text = table.concat(text, " ") end
+	if text == nil or text == "" then return nil end
+	local norm = Search.Normalize(text)
+	local words = {}
+	for w in norm:gmatch(WORD) do words[#words + 1] = w end
+	if whole then words[#words + 1] = norm end -- a chat name like "outgoing.fontsize" also matches whole
+	if #words == 0 then return nil end
+	return { text = norm, words = words, weight = weight }
+end
+
+function Search.Entry(info)
+	local e = { fields = {}, info = info }
+	local function add(text, weight, whole)
+		local f = makeField(text, weight, whole)
+		if f then e.fields[#e.fields + 1] = f end
+		return f
+	end
+	local label = add(info.label, WEIGHT.label)
+	if info.chatLabel and info.chatLabel ~= info.label then add(info.chatLabel, WEIGHT.label - 1) end
+	add(info.key, WEIGHT.key, true)
+	add(info.keywords, WEIGHT.keywords)
+	add(info.section, WEIGHT.section)
+	add(info.header, WEIGHT.header)
+	add(type(info.choices) == "function" and info.choices() or info.choices, WEIGHT.choices)
+	add(info.desc, WEIGHT.desc)
+	e.labelText = label and table.concat(label.words, " ") or ""
+	e.value = type(info.value) == "function" and info.value or nil
+	return e
+end
+
+-- 3 a whole word, 2 the start of a word, 1 inside a word (4 or more letters typed), 0 not there.
+local function termIn(field, term)
+	local best = 0
+	for _, w in ipairs(field.words) do
+		if w == term then return 3 end
+		if best == 0 and w:sub(1, #term) == term then best = 2 end
+	end
+	if best == 0 and #term >= 4 and field.text:find(term, 1, true) then best = 1 end
+	return best
+end
+
+local function scoreTerms(e, terms)
+	local valueField
+	if e.value then
+		local ok, v = pcall(e.value)
+		valueField = ok and makeField(v, WEIGHT.value) or nil
+	end
+	local total = 0
+	for _, term in ipairs(terms) do
+		local best = 0
+		for _, f in ipairs(e.fields) do
+			local q = termIn(f, term)
+			if q > 0 and q * f.weight > best then best = q * f.weight end
+		end
+		if valueField then
+			local q = termIn(valueField, term)
+			if q > 0 and q * valueField.weight > best then best = q * valueField.weight end
+		end
+		if best == 0 then return nil end
+		total = total + best
+	end
+	return total
+end
+
+function Search.Match(entries, query, keep)
+	local terms = Search.Terms(query)
+	local out = {}
+	if #terms == 0 then return out end
+	local whole = table.concat(terms, " ")
+	for i, e in ipairs(entries) do
+		if not keep or keep(e) then
+			local score = scoreTerms(e, terms)
+			if score then
+				if e.labelText == whole then score = score + 100
+				elseif e.labelText:sub(1, #whole) == whole then score = score + 30 end
+				out[#out + 1] = { entry = e, score = score, order = i }
+			end
+		end
+	end
+	table.sort(out, function(a, b)
+		if a.score ~= b.score then return a.score > b.score end
+		return a.order < b.order
+	end)
+	return out
+end
+
+-- Edit distance with swapped neighbours counting once (optimal string alignment).
+local function distance(a, b)
+	local la, lb = #a, #b
+	if la == 0 then return lb end
+	if lb == 0 then return la end
+	local prev2, prev, cur = {}, {}, {}
+	for j = 0, lb do prev[j] = j end
+	for i = 1, la do
+		cur = { [0] = i }
+		local ca = a:byte(i)
+		for j = 1, lb do
+			local cb = b:byte(j)
+			local cost = ca == cb and 0 or 1
+			local v = math.min(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + cost)
+			if i > 1 and j > 1 and ca == b:byte(j - 1) and a:byte(i - 1) == cb then v = math.min(v, prev2[j - 2] + 1) end
+			cur[j] = v
+		end
+		prev2, prev = prev, cur
+	end
+	return prev[lb]
+end
+Search.Distance = distance
+
+-- A query one or two typos away that finds something ("trasnparent" -> "transparent"), or nil.
+function Search.Suggest(entries, query, keep)
+	local terms = Search.Terms(query)
+	if #terms == 0 then return nil end
+	local vocab, seen = {}, {}
+	for _, e in ipairs(entries) do
+		if not keep or keep(e) then
+			for _, f in ipairs(e.fields) do
+				for _, w in ipairs(f.words) do
+					if #w >= 3 and not seen[w] and w:find("^[%w\128-\255]+$") then seen[w] = true; vocab[#vocab + 1] = w end
+				end
+			end
+		end
+	end
+	table.sort(vocab)
+	local changed = false
+	for i, term in ipairs(terms) do
+		local found = false
+		for _, w in ipairs(vocab) do
+			if w:sub(1, #term) == term or (#term >= 4 and w:find(term, 1, true)) then found = true break end
+		end
+		if not found then
+			local limit = #term <= 2 and 0 or #term <= 5 and 1 or #term <= 8 and 2 or 3
+			local best, bestD, bestFull
+			for _, w in ipairs(vocab) do
+				-- against the whole word, and against its start (a typo in a half-typed word)
+				local full = distance(term, w)
+				local d = math.min(full, distance(term, w:sub(1, #term)))
+				if d <= limit and (not bestD or d < bestD or (d == bestD and full < bestFull)) then best, bestD, bestFull = w, d, full end
+			end
+			if not best then return nil end
+			terms[i] = best
+			changed = true
+		end
+	end
+	if not changed then return nil end
+	local q = table.concat(terms, " ")
+	if #Search.Match(entries, q, keep) > 0 then return q end
+	return nil
 end
 
 ------------------------------------------------------------------------
@@ -1271,7 +1528,8 @@ end
 -- Settings: one definition drives the window widget and the slash command.
 -- def: key, type ("bool" | "number" | "choice" | "color" | "string"), label, desc, get(), set(v),
 -- min, max, step, fmt, choices ({ { value, text } }), width, disabled(), after(v), example (for the help text),
--- hasAlpha, chatLabel (the label in chat replies when it needs more context than in the window).
+-- hasAlpha, chatLabel (the label in chat replies when it needs more context than in the window),
+-- keywords (more words the window's search finds it by, e.g. { "opacity", "alpha" }; English is fine).
 ------------------------------------------------------------------------
 function App:Setting(def)
 	assert(def.key and def.type and def.get and def.set, "setting needs key, type, get and set")
@@ -1487,6 +1745,7 @@ function App:Widget(stack, key, extra)
 		label = def.label, desc = def.desc, get = def.get, disabled = def.disabled,
 		min = def.min, max = def.max, step = def.step, fmt = def.fmt, items = def.choices,
 		width = def.width, hasAlpha = def.hasAlpha, placeholder = def.placeholder,
+		keywords = def.keywords, searchKey = def.key, chatLabel = def.chatLabel,
 		set = function(v) def.set(v) end,
 		after = function() if def.after then def.after(def.get()) end; app:RefreshButtons() end,
 	}
@@ -1497,6 +1756,385 @@ function App:Widget(stack, key, extra)
 	if t == "choice" then return UI.Dropdown(stack, opt) end
 	if t == "color" then return UI.Color(stack, opt) end
 	return UI.Input(stack, opt)
+end
+
+------------------------------------------------------------------------
+-- Settings search in the window. The box sits at the top centre; typing lists the matching controls from
+-- every page. The listed controls are the real ones, borrowed from their page (its layout keeps their room)
+-- and given back when the search changes or ends, so whatever you change there is the setting itself.
+------------------------------------------------------------------------
+local MAX_RESULTS = 50
+local PATH_SEP = " \194\187 " -- " » "
+
+-- Stack:Add calls this for a widget with searchInfo on one of the app's pages.
+function App:IndexWidget(stack, frame)
+	local s = self.sections[stack.section]
+	local list = self.searchBySection and self.searchBySection[stack.section]
+	if not s or not list then return end
+	local info = {}
+	for k, v in pairs(frame.searchInfo) do info[k] = v end
+	local header = stack.searchHeader
+	if header and Search.Normalize(header) == Search.Normalize(s.title) then header = nil end -- "Options » Options"
+	info.section, info.header = s.title, header
+	local e = Search.Entry(info)
+	e.frame, e.stack, e.sectionId = frame, stack, s.id
+	e.path = s.title .. (header and (PATH_SEP .. header) or "")
+	list[#list + 1] = e
+end
+
+-- Every indexed control, in page order.
+function App:SearchEntries()
+	local all = {}
+	for _, id in ipairs(self.order) do
+		for _, e in ipairs(self.searchBySection and self.searchBySection[id] or {}) do all[#all + 1] = e end
+	end
+	return all
+end
+
+-- Build a page's widgets, hidden (ShowSection shows it; the search reads it).
+function App:BuildSection(id)
+	local f, s = self.window, self.sections[id]
+	if not f or not s or s.scroll then return s end
+	s.scroll = UI.ScrollPage(f.content)
+	s.scroll:Hide()
+	local width = f.contentWidth - 24 -- the scroll bar takes the right edge
+	s.scroll.child:SetWidth(width)
+	s.stack = UI.Stack(s.scroll.child, width, self.T)
+	s.stack.app, s.stack.section = self, id
+	self.searchBySection[id] = {}
+	s.build(s.stack, self, s)
+	s.scroll.UpdateBar()
+	s.searchFailed = nil
+	return s
+end
+
+local function DropSection(app, s)
+	if s.scroll then s.scroll:Hide(); s.scroll:SetParent(nil) end
+	s.scroll, s.stack = nil, nil
+	if app.searchBySection then app.searchBySection[s.id] = nil end
+end
+
+-- Build the pages not built yet so the search knows their settings (all of them, or with `one` just the next).
+-- A page that fails is reported once and left to be built when it is opened. True when one was built.
+function App:EnsureSearchIndex(one)
+	if not self.window then return false end
+	for _, id in ipairs(self.order) do
+		local s = self.sections[id]
+		if not s.scroll and not s.searchFailed then
+			local ok, err = pcall(self.BuildSection, self, id)
+			if not ok then
+				DropSection(self, s)
+				s.searchFailed = true
+				local handler = geterrorhandler and geterrorhandler()
+				if handler then handler(err) end
+			end
+			if one then return true end
+		end
+	end
+	return false
+end
+
+-- After the window opens: build the other pages one per frame, so the first search is instant.
+function App:WarmSearch()
+	if self.warming then return end
+	self.warming = true
+	local app = self
+	local function step()
+		if not app:IsShown() or not app:EnsureSearchIndex(true) then app.warming = nil return end
+		C_Timer.After(0, step)
+	end
+	C_Timer.After(0, step)
+end
+
+local function Listed(e) return e.frame:IsShown() end -- a control its addon hid (doesn't apply now) isn't listed
+
+-- Put a control into the results at `y`.
+function App:Borrow(e, parent, y, width)
+	local fr, se = e.frame, e.frame.stackEntry
+	if not self.borrowed[e] then
+		self.borrowed[e] = true
+		se.borrowed = true
+		fr:SetParent(parent)
+	end
+	fr:ClearAllPoints()
+	fr:SetPoint("TOPLEFT", parent, "TOPLEFT", 0, -y)
+	fr:SetWidth(width)
+	fr:SetHeight(se.height)
+	if fr.Refresh then fr:Refresh() end
+end
+
+-- Give controls back to their pages (all of them, or those not in `keep`).
+function App:ReturnBorrowed(keep)
+	if not self.borrowed then return end
+	local stacks = {}
+	for e in pairs(self.borrowed) do
+		if not (keep and keep[e]) then
+			self.borrowed[e] = nil
+			e.frame.stackEntry.borrowed = nil
+			e.frame:SetParent(e.stack.parent)
+			stacks[e.stack] = true
+		end
+	end
+	for st in pairs(stacks) do st:Relayout() end
+end
+
+function App:RefreshBorrowed(skipStack)
+	if self.refreshingResults or not self.borrowed then return end
+	self.refreshingResults = true
+	for e in pairs(self.borrowed) do
+		if e.stack ~= skipStack and e.frame.Refresh then e.frame:Refresh() end
+	end
+	self.refreshingResults = nil
+end
+
+-- Search for `text` and list what matches; an empty text ends the search. Returns the matches.
+function App:Search(text)
+	local f = self.window
+	if not f then return {} end
+	local q = U.Trim(text)
+	if q == "" then self:StopSearch() return {} end
+	self:EnsureSearchIndex()
+	if not self.searching then
+		self.searching = true
+		ClosePopup()
+		for _, s in pairs(self.sections) do if s.scroll then s.scroll:Hide() end end
+	end
+	local entries = self:SearchEntries()
+	self.searchQuery = q
+	local results = Search.Match(entries, q, Listed)
+	self:ShowResults(results, q, entries)
+	return results
+end
+
+function App:ShowResults(results, q, entries)
+	local f, T = self.window, self.T
+	local R = f.results
+	local child = R.child
+	local width = f.contentWidth - 24
+	local n = math.min(#results, MAX_RESULTS)
+	local want = {}
+	for i = 1, n do want[results[i].entry] = true end
+	self:ReturnBorrowed(want)
+	for _, row in ipairs(R.paths) do row.entry = nil; row:Hide() end
+	R.empty:Hide()
+	R.suggest:Hide()
+	R.more:Hide()
+	local y = 4
+	if n == 0 then
+		R.empty:SetText(("No setting matches '%s'."):format(U.Escape(q)))
+		R.empty:Show()
+		y = y + 22
+		local sug = Search.Suggest(entries, q, Listed)
+		R.suggest.query = sug
+		if sug then
+			R.suggest.label:SetText("Did you mean |cff" .. hex(T.accent) .. U.Escape(sug) .. "|r?")
+			R.suggest:SetWidth(math.min(width, (R.suggest.label:GetStringWidth() or 200) + 4))
+			R.suggest:Show()
+			y = y + 22
+		end
+	else
+		for i = 1, n do
+			local e = results[i].entry
+			local row = R.paths[i] or R.NewPath(i)
+			row.entry = e
+			row.text:SetText(e.path)
+			local tw = row.text.GetUnboundedStringWidth and row.text:GetUnboundedStringWidth() or row.text:GetStringWidth() or 200
+			row:SetWidth(math.min(width, (tw or 200) + 4))
+			row:ClearAllPoints()
+			row:SetPoint("TOPLEFT", child, "TOPLEFT", 0, -y)
+			row:Show()
+			y = y + 17
+			self:Borrow(e, child, y, width)
+			y = y + e.frame.stackEntry.height + 18
+		end
+		if #results > n then
+			R.more:SetText(("%d more. Add a word to narrow it down."):format(#results - n))
+			R.more:ClearAllPoints()
+			R.more:SetPoint("TOPLEFT", child, "TOPLEFT", 0, -y)
+			R.more:Show()
+			y = y + 20
+		end
+	end
+	child:SetHeight(y + T.pad)
+	R:Show()
+	R.SetScroll(0)
+	R.UpdateBar()
+end
+
+-- End the search: the controls go back and the page you were on shows again.
+function App:StopSearch()
+	local f = self.window
+	if f and f.searchBox and f.searchBox:GetText() ~= "" then f.searchBox:SetText("") end
+	if not self.searching then return end
+	self.searching = nil
+	self:ReturnBorrowed()
+	ClosePopup()
+	f.results:Hide()
+	local s = self.current and self.sections[self.current]
+	if s and s.scroll then
+		s.stack:RefreshAll()
+		s.scroll:Show()
+	end
+end
+
+-- From a result's path: open its page, scroll to it and light it up for a moment.
+function App:JumpTo(e)
+	local id = e.sectionId
+	self:StopSearch()
+	self:ShowSection(id)
+	local s = self.sections[id]
+	if self.current ~= id or not s or e.stack ~= s.stack then return end -- kept on the page (unsaved changes) or rebuilt
+	local se = e.frame.stackEntry
+	if s.scroll.SetScroll and se and se.y then s.scroll.SetScroll(se.y - 12) end
+	self:Flash(e.frame)
+end
+
+function App:Flash(frame)
+	local T = self.T
+	local tex = rawget(frame, "eluiFlash")
+	if not tex then
+		tex = frame:CreateTexture(nil, "BACKGROUND", nil, -8)
+		tex:SetTexture(U.WHITE)
+		tex:SetPoint("TOPLEFT", -6, 4)
+		tex:SetPoint("BOTTOMRIGHT", 6, -4)
+		frame.eluiFlash = tex
+	end
+	tex:SetVertexColor(T.accent[1], T.accent[2], T.accent[3], 1)
+	tex:SetAlpha(0.28)
+	tex:Show()
+	local driver = self.flashDriver
+	if not driver then
+		driver = CreateFrame("Frame")
+		self.flashDriver = driver
+	end
+	if driver.tex and driver.tex ~= tex then driver.tex:Hide() end
+	driver.tex = tex
+	local start = GetTime()
+	driver:SetScript("OnUpdate", function(d)
+		local t = GetTime() - start
+		if t >= 1.8 then tex:Hide(); d.tex = nil; d:SetScript("OnUpdate", nil) return end
+		tex:SetAlpha(t < 0.6 and 0.28 or 0.28 * (1 - (t - 0.6) / 1.2))
+	end)
+end
+
+-- The box, the results page and the keys (Ctrl+F, Escape). Called by CreateWindow.
+function App:CreateSearch(f, width)
+	local app, T = self, self.T
+	self.borrowed = self.borrowed or {}
+	self.searchBySection = self.searchBySection or {}
+
+	local box = UI.EditBox(f, width, 26)
+	box:SetTextInsets(26, 26, 0, 0)
+	box:SetMaxLetters(60)
+	local icon = box:CreateTexture(nil, "OVERLAY")
+	icon:SetTexture("Interface\\Common\\UI-Searchbox-Icon")
+	icon:SetSize(14, 14)
+	icon:SetPoint("LEFT", 8, -1)
+	icon:SetVertexColor(rgba(T.muted))
+	local hint = Text(box, T.font, T.muted)
+	hint:SetPoint("LEFT", 26, 0)
+	hint:SetText("Search settings")
+	local keyHint = Text(box, T.fontSmall, T.muted)
+	keyHint:SetPoint("RIGHT", -9, 0)
+	keyHint:SetText("Ctrl+F")
+	local clear = CreateFrame("Button", nil, box)
+	clear:SetSize(22, 22)
+	clear:SetPoint("RIGHT", -2, 0)
+	local cx = Text(clear, T.font, T.muted)
+	cx:SetPoint("CENTER")
+	cx:SetText("x")
+	clear:SetScript("OnEnter", function() cx:SetTextColor(rgba(T.text)) end)
+	clear:SetScript("OnLeave", function() cx:SetTextColor(rgba(T.muted)) end)
+	clear:SetScript("OnClick", function() app:StopSearch(); box:SetFocus() end)
+	Tooltip(clear, "Clear the search")
+
+	local function update()
+		local empty = (box:GetText() or "") == ""
+		hint:SetShown(empty)
+		keyHint:SetShown(empty and not box:HasFocus())
+		clear:SetShown(not empty)
+	end
+	box.UpdateHint = update
+	box:HookScript("OnEditFocusGained", update)
+	box:HookScript("OnEditFocusLost", update)
+	-- searches once per frame at most, however fast you type or paste
+	local pending
+	box:SetScript("OnTextChanged", function(self, user)
+		update()
+		if not user or pending then return end
+		pending = true
+		C_Timer.After(0, function()
+			pending = nil
+			if f:IsShown() then app:Search(box:GetText()) end
+		end)
+	end)
+	box:SetScript("OnEnterPressed", function(self) self:ClearFocus() end)
+	-- Escape clears the search; Escape in an empty box closes the window
+	box:SetScript("OnEscapePressed", function(self)
+		local had = (self:GetText() or "") ~= "" or app.searching
+		self:ClearFocus()
+		if had then app:StopSearch() else app:Close() end
+	end)
+	update()
+	f.searchBox = box
+
+	-- the results page, in the content area in place of the page you were on
+	local R = UI.ScrollPage(f.content)
+	R:Hide()
+	R.child:SetWidth(f.contentWidth - 24)
+	R.paths = {}
+	function R.NewPath(i)
+		local b = CreateFrame("Button", nil, R.child)
+		b:SetHeight(14)
+		b.text = Text(b, T.fontSmall + 1, T.muted)
+		b.text:SetPoint("LEFT")
+		b.text:SetWordWrap(false)
+		b:SetScript("OnEnter", function(self)
+			self.text:SetTextColor(rgba(T.accent))
+			GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+			GameTooltip:AddLine("Go to this setting", 1, 1, 1)
+			GameTooltip:Show()
+		end)
+		b:SetScript("OnLeave", function(self)
+			self.text:SetTextColor(rgba(T.muted))
+			GameTooltip:Hide()
+		end)
+		b:SetScript("OnClick", function(self) if self.entry then app:JumpTo(self.entry) end end)
+		R.paths[i] = b
+		return b
+	end
+	R.empty = Text(R.child, T.font, T.text)
+	R.empty:SetPoint("TOPLEFT", 0, -4)
+	R.empty:SetPoint("RIGHT")
+	R.empty:Hide()
+	R.suggest = CreateFrame("Button", nil, R.child)
+	R.suggest:SetHeight(18)
+	R.suggest:SetPoint("TOPLEFT", 0, -26)
+	R.suggest.label = Text(R.suggest, T.font, T.muted)
+	R.suggest.label:SetPoint("LEFT")
+	R.suggest.label:SetWordWrap(false)
+	R.suggest:SetScript("OnClick", function(self)
+		if not self.query then return end
+		box:SetText(self.query)
+		box.UpdateHint()
+		app:Search(self.query)
+	end)
+	R.suggest:Hide()
+	R.more = Text(R.child, T.fontSmall + 1, T.muted)
+	R.more:Hide()
+	f.results = R
+
+	f.eluiKey = function(_, key)
+		if key == "F" and IsControlKeyDown() then
+			box:SetFocus()
+			box:HighlightText()
+			return true
+		end
+	end
+	f.eluiEscape = function()
+		if app.searching or (box:GetText() or "") ~= "" then app:StopSearch() return true end
+	end
+	return box
 end
 
 local function SavePosition(app, f)
@@ -1556,7 +2194,7 @@ function App:CreateWindow()
 		buttons[#buttons + 1] = { label = "Feedback / report a bug", onClick = function() app:ShowFeedback() end }
 	end
 
-	local contentLeft, contentTop, contentBottom
+	local contentLeft, contentTop, contentBottom, titleRight
 	if sidebar then
 		local side = CreateFrame("Frame", nil, f)
 		side:SetPoint("TOPLEFT", 1, -1)
@@ -1629,7 +2267,7 @@ function App:CreateWindow()
 			local b = footerButton(side, d, SIDEBAR_W - 16)
 			b:SetPoint("BOTTOMLEFT", 8, 12 + (#buttons - i) * 32)
 		end
-		contentLeft, contentTop, contentBottom = SIDEBAR_W + 1 + T.pad + 8, -T.pad - 8, T.pad
+		contentLeft, contentTop, contentBottom = SIDEBAR_W + 1 + T.pad + 8, -52, T.pad -- the search box sits above
 	else
 		local title = Text(f, T.fontHuge, T.text)
 		title:SetPoint("TOPLEFT", T.pad, -14)
@@ -1638,6 +2276,8 @@ function App:CreateWindow()
 		local ver = Text(f, T.fontSmall, T.muted)
 		ver:SetPoint("BOTTOMLEFT", title, "BOTTOMRIGHT", 8, 1)
 		ver:SetText(self:Version())
+		local function width(fs) return fs.GetUnboundedStringWidth and fs:GetUnboundedStringWidth() or fs:GetStringWidth() or 0 end
+		titleRight = T.pad + (width(title) or 0) + 8 + (width(ver) or 0)
 		local top = 44
 		if spec.tagline then
 			local tag = Text(f, T.fontSmall + 1, T.muted)
@@ -1685,12 +2325,29 @@ function App:CreateWindow()
 	f.content = content
 	f.contentWidth = W - contentLeft - T.pad
 
+	-- the search box, top centre: over the page column, or in the title row of a one-page window
+	if sidebar then
+		local boxW = math.min(300, W - SIDEBAR_W - 120)
+		local box = self:CreateSearch(f, boxW)
+		box:SetPoint("TOP", f, "TOPLEFT", SIDEBAR_W + 1 + (W - SIDEBAR_W - 1) / 2, -12)
+	else
+		local boxW, right = 240, W - 44 -- clear of the close button
+		local left = math.floor((W - boxW) / 2)
+		if left < titleRight + 16 then left = math.ceil(titleRight + 16) end
+		if left + boxW > right then boxW = math.max(140, right - left) end
+		local box = self:CreateSearch(f, boxW)
+		box:SetPoint("TOPLEFT", f, "TOPLEFT", left, -10)
+	end
+
 	f:SetScript("OnShow", function()
 		app:RefreshButtons()
 		if spec.onShow then spec.onShow(app) end
+		app:WarmSearch()
 	end)
 	f:SetScript("OnHide", function()
 		ClosePopup()
+		f.searchBox:ClearFocus()
+		app:StopSearch()
 		if spec.onHide then spec.onHide(app) end
 	end)
 	UI.CloseOnEscape(f)
@@ -1712,6 +2369,7 @@ function App:ShowSection(id)
 	local s = self.sections[id]
 	if not s then return end
 	ClosePopup()
+	if self.searching then self:StopSearch() end -- a page picked in the sidebar ends the search
 	for sid, other in pairs(self.sections) do
 		if other.scroll then other.scroll:SetShown(sid == id) end
 		local b = f.navButtons and f.navButtons[sid]
@@ -1724,12 +2382,7 @@ function App:ShowSection(id)
 	end
 	self.current = id
 	if not s.scroll then
-		s.scroll = UI.ScrollPage(f.content)
-		local width = f.contentWidth - 24 -- the scroll bar takes the right edge
-		s.scroll.child:SetWidth(width)
-		s.stack = UI.Stack(s.scroll.child, width, self.T)
-		s.build(s.stack, self, s)
-		s.scroll.UpdateBar()
+		self:BuildSection(id)
 	else
 		s.stack:RefreshAll()
 	end
@@ -1740,16 +2393,20 @@ end
 function App:RebuildSection(id)
 	local s = self.sections[id]
 	if not s or not s.scroll then return end
-	s.scroll:Hide()
-	s.scroll:SetParent(nil)
-	s.scroll, s.stack = nil, nil
-	if self.current == id and self:IsShown() then self:ShowSection(id) end
+	if self.searching then self:ReturnBorrowed() end
+	DropSection(self, s)
+	if self.searching then
+		self:Search(self.searchQuery or "") -- builds it again for the results
+	elseif self.current == id and self:IsShown() then
+		self:ShowSection(id)
+	end
 end
 
 -- Re-read every value shown in the open window.
 function App:Refresh()
 	if not self.window then return end
 	self:RefreshButtons()
+	if self.searching then self:RefreshBorrowed() return end
 	local s = self.current and self.sections[self.current]
 	if s and s.stack then s.stack:RefreshAll() end
 end

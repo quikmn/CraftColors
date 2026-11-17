@@ -172,13 +172,13 @@ ns.app = app
 local function after() ns.Apply() end
 
 app:Setting({
-    key = "enabled", type = "bool", label = "Colour recipe names",
+    key = "enabled", type = "bool", label = "Colour recipe names", keywords = { "color", "on", "off", "difficulty" },
     desc = "Off: recipe names keep the game's own colour.",
     get = function() return db.enabled end, set = function(v) db.enabled = v end, after = after,
 })
 for _, name in ipairs(ORDER) do
     app:Setting({
-        key = name, type = "color", label = LABELS[name],
+        key = name, type = "color", label = LABELS[name], keywords = { "colour", "color", "difficulty", "skill-up" },
         get = function() return db.colors[name] end,
         set = function(v) db.colors[name] = { v[1], v[2], v[3] } end,
         disabled = function() return not db.enabled end,
@@ -187,6 +187,7 @@ for _, name in ipairs(ORDER) do
 end
 app:Setting({
     key = "hover", type = "number", label = "Brighten the row under the mouse", min = 0, max = 0.5, step = 0.05,
+    keywords = { "highlight", "mouseover", "brightness", "lighter" },
     desc = "How much lighter a recipe name gets while the mouse is over it, so the highlight still reads.",
     get = function() return db.hoverBoost end, set = function(v) db.hoverBoost = v end,
     disabled = function() return not db.enabled end, after = after,
@@ -215,7 +216,8 @@ app:Section("main", "CraftColors", function(stack)
     for _, name in ipairs(ORDER) do app:Widget(stack, name) end
     app:Widget(stack, "hover")
     UI.ButtonRow(stack, {
-        { label = "Back to default colours", width = 200, confirm = true, onClick = function() ns.ResetColors() end },
+        { label = "Back to default colours", width = 200, confirm = true, onClick = function() ns.ResetColors() end,
+            keywords = { "reset", "defaults", "colors" } },
     })
     UI.Header(stack, "Selected recipe", "What the game says about the recipe selected in the profession window (handy for bug reports).")
     UI.Note(stack, ns.CheckText)
