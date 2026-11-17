@@ -15,7 +15,7 @@
 -- Widgets: Header, Note, Toggle, Slider, Dropdown, Color, Input, CopyBox, Stat, List, Button, ConfirmButton,
 -- ButtonRow, TextArea, ScrollPage. Bound widgets take { label, desc, get, set, disabled, after } and have :Refresh().
 -- The mouse wheel scrolls the page: sliders and dropdowns never take it. The page scroll bar is 12 px and draggable.
-local MAJOR, MINOR = "EverlookUI-1", 1
+local MAJOR, MINOR = "EverlookUI-1", 2
 local UI = LibStub:NewLibrary(MAJOR, MINOR)
 if not UI then return end
 UI.version = MINOR
@@ -216,7 +216,10 @@ function UI.CloseOnEscape(frame)
 	frame:SetScript("OnKeyDown", function(self, key)
 		local esc = key == "ESCAPE"
 		if not InCombatLockdown() then self:SetPropagateKeyboardInput(not esc) end
-		if esc then self:Hide() end
+		if not esc then return end
+		-- an open dropdown list closes first; the next Escape closes the window
+		if UI.IsPopupShown and UI.IsPopupShown() then UI.ClosePopup() return end
+		self:Hide()
 	end)
 end
 
@@ -378,21 +381,27 @@ function UI.Button(parent, label, onClick, width, style)
 end
 
 -- For something that can't be undone: the first click asks, a second click within 4 seconds does it.
+-- A narrow button (a list row's) asks "Click again", which fits where "Click again to confirm" would not.
 function UI.ConfirmButton(parent, label, onConfirm, width, style)
 	local b
-	local armed = false
+	local armed, before = nil, nil -- armed: a token for the 4-second timer; before: the label to put back
+	local ask = (width or 120) < 150 and "Click again" or "Click again to confirm"
+	local function disarm()
+		if armed then armed = nil; b:SetText(before or label) end
+	end
 	b = UI.Button(parent, label, function(self, ...)
 		if not armed then
-			armed = true
-			self:SetText("Click again to confirm")
-			C_Timer.After(4, function() if armed then armed = false; b:SetText(label) end end)
+			before = self:GetText()
+			local token = {}
+			armed = token
+			self:SetText(ask)
+			C_Timer.After(4, function() if armed == token then disarm() end end)
 			return
 		end
-		armed = false
-		self:SetText(label)
+		disarm()
 		onConfirm(self, ...)
 	end, width, style or "danger")
-	b:HookScript("OnHide", function() if armed then armed = false; b:SetText(label) end end)
+	b:HookScript("OnHide", disarm)
 	return b
 end
 
@@ -547,8 +556,12 @@ function UI.Slider(stack, opt)
 	box:SetScript("OnEnterPressed", function(self)
 		local v = tonumber(self:GetText())
 		if v then
-			v = math.min(opt.max, math.max(opt.min, v))
+			-- snap to the step like dragging does, and set it once (the slider moving must not set it again)
+			local step = opt.step or 1
+			v = math.min(opt.max, math.max(opt.min, math.floor(v / step + 0.5) * step))
+			updating = true
 			slider:SetValue(v)
+			updating = false
 			opt.set(v)
 			if opt.after then opt.after() end
 		end
@@ -572,6 +585,7 @@ local function ClosePopup()
 	if catcher then catcher:Hide() end
 end
 UI.ClosePopup = ClosePopup
+function UI.IsPopupShown() return popup ~= nil and popup:IsShown() end
 
 -- items = { { value, text, icon?, title? }, ... }. A title row can't be clicked.
 -- opts.width overrides the owner's width; opts.atCursor opens it at the mouse.
@@ -788,7 +802,10 @@ function UI.Input(stack, opt)
 	box:HookScript("OnEditFocusGained", updateHint)
 	box:HookScript("OnEditFocusLost", function(self)
 		updateHint()
-		if opt.set then opt.set(self:GetText()); if opt.after then opt.after() end end
+		if opt.set and (not opt.get or self:GetText() ~= (opt.get() or "")) then
+			opt.set(self:GetText())
+			if opt.after then opt.after() end
+		end
 	end)
 	box:SetScript("OnTextChanged", function(self, user)
 		updateHint()
@@ -798,6 +815,10 @@ function UI.Input(stack, opt)
 		if opt.onEnter then opt.onEnter(self:GetText(), self) end
 		self:ClearFocus()
 	end)
+	if opt.get then
+		-- Escape throws away what was typed (leaving the box would otherwise save it)
+		box:SetScript("OnEscapePressed", function(self) self:SetText(opt.get() or ""); self:ClearFocus() end)
+	end
 	if opt.button then
 		local b = UI.Button(f, opt.button.label, function() opt.button.onClick(box:GetText(), box) end, opt.button.width or 110, opt.button.style)
 		b:SetPoint("LEFT", box, "RIGHT", 8, 0)
@@ -1317,7 +1338,7 @@ function App:Parse(def, text)
 		local w = text:lower()
 		if w == "toggle" then return true, not def.get() end
 		local v = BOOL_WORDS[w]
-		if v == nil then return false, "use on or off" end
+		if v == nil then return false, "needs on or off" end
 		return true, v
 	elseif def.type == "number" then
 		local v = tonumber(text)
@@ -1327,7 +1348,7 @@ function App:Parse(def, text)
 		return true, v
 	elseif def.type == "choice" then
 		local w = text:lower()
-		if w == "" then return false, "choose one of: " .. self:Accepts(def) end
+		if w == "" then return false, "needs one of: " .. self:Accepts(def) end
 		for _, c in ipairs(def.choices) do
 			if tostring(c.value):lower() == w then return true, c.value end
 		end
@@ -1339,7 +1360,7 @@ function App:Parse(def, text)
 			end
 		end
 		if found then return true, found.value end
-		return false, "choose one of: " .. self:Accepts(def)
+		return false, "needs one of: " .. self:Accepts(def)
 	elseif def.type == "color" then
 		local h = text:match("^#?(%x%x%x%x%x%x)$")
 		if h then
@@ -1374,7 +1395,7 @@ function App:SetFromText(def, text)
 	end
 	local ok, v = self:Parse(def, text)
 	if not ok then
-		self:Print("|cffff6060" .. label .. " " .. U.Escape(v) .. ".|r Example: " .. U.Escape(usage))
+		self:Print("|cffff6060" .. label .. ": " .. U.Escape(v) .. ".|r Example: " .. U.Escape(usage))
 		return false
 	end
 	self:Apply(def, v)
@@ -1622,6 +1643,9 @@ function App:CreateWindow()
 			for _, d in ipairs(buttons) do
 				local w = d.width or 150
 				local b = footerButton(f, d, w)
+				-- never narrower than the label ("Feedback / report a bug" needs about 160 px)
+				local tw = b.label.GetUnboundedStringWidth and b.label:GetUnboundedStringWidth() or b.label:GetStringWidth() or 0
+				if tw + 24 > w then w = math.ceil(tw + 24); b:SetWidth(w) end
 				b:SetPoint("BOTTOMLEFT", x, 14)
 				x = x + w + 8
 			end

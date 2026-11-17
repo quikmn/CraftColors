@@ -134,6 +134,23 @@ step("no taint: only our own globals; no Blizzard popups", function()
 	check(next(UISpecialFrames) == nil, "UISpecialFrames used")
 end)
 
+step("turning colouring off puts the label's own colour back", function()
+	local color = { 0.9, 0.8, 0.1 }
+	local row = {
+		Label = { SetTextColor = function(_, r, g, b) color = { r, g, b } end, GetTextColor = function() return color[1], color[2], color[3] end },
+		GetElementData = function() return { GetData = function() return { recipeInfo = { relativeDifficulty = Enum.TradeskillRelativeDifficulty.Easy } } end } end,
+		IsMouseOver = function() return false end,
+	}
+	ns.Recolor(row)
+	check(color[1] == 0.25 and color[2] == 0.75, "not green")
+	CraftColorsDB.enabled = false
+	ns.Recolor(row)
+	check(color[1] == 0.9 and color[2] == 0.8 and color[3] == 0.1, "own colour not restored")
+	CraftColorsDB.enabled = true
+	ns.Recolor(row)
+	check(color[1] == 0.25, "not recoloured after turning back on")
+end)
+
 step("no Lua errors reported", function()
 	check(#MOCK.errors == 0, table.concat(MOCK.errors, "\n"))
 end)

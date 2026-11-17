@@ -48,9 +48,19 @@ local function GetRecipeInfo(frame)
 end
 
 local function Recolor(frame)
-    if not db or not db.enabled then return end
+    if not db or not frame.Label then return end
+    if not db.enabled then
+        -- put back the label's own colour (saved before we first tinted it)
+        local o = frame.ccOrigColor
+        if o then frame.Label:SetTextColor(o[1], o[2], o[3]) end
+        return
+    end
     local info = GetRecipeInfo(frame)
-    if not info or not frame.Label then return end
+    if not info then return end
+    if not frame.ccOrigColor and frame.Label.GetTextColor then
+        local r, g, b = frame.Label:GetTextColor()
+        if r then frame.ccOrigColor = { r, g, b } end
+    end
     local c = ns.ColorFor(info.relativeDifficulty)
     if not c then return end
     if frame.IsMouseOver and frame:IsMouseOver() then
@@ -106,8 +116,8 @@ local function TryHookProfessions()
     return true
 end
 
--- Recolour an open profession window right away after a setting changes. Turning colouring off
--- leaves the current colours until Blizzard redraws the list (scroll it or reopen the window).
+-- Recolour an open profession window right away after a setting changes (turning it off puts the
+-- game's own colours back).
 function ns.Apply()
     local scrollBox = scrollBoxHooked and RecipeScrollBox()
     if scrollBox then RefreshAll(scrollBox) end
@@ -163,7 +173,7 @@ local function after() ns.Apply() end
 
 app:Setting({
     key = "enabled", type = "bool", label = "Colour recipe names",
-    desc = "Turning it off leaves the current colours until the list redraws (scroll it or reopen the window).",
+    desc = "Off: recipe names keep the game's own colour.",
     get = function() return db.enabled end, set = function(v) db.enabled = v end, after = after,
 })
 for _, name in ipairs(ORDER) do
