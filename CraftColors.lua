@@ -160,7 +160,8 @@ end)
 local app = UI:NewApp({
     name = "CraftColors",
     addon = ADDON,
-    slash = "/craftcolors",
+    slash = "/ccolors",
+    aliases = { "/craftcolors" },
     tagline = "Colours recipe names in the profession window by how likely they are to give a skill-up.",
     accent = { 1.00, 0.50, 0.25 },
     height = 520,
@@ -200,14 +201,13 @@ function ns.ResetColors()
     app:Refresh()
 end
 
-app:Command("reset", "reset", "colours back to the defaults", function()
-    ns.ResetColors()
-    app:Print("colours are back to the defaults.")
-end)
+-- /ccolors on, off, toggle: the colouring. /ccolors reset asks first, then puts the colours back.
+app:OnOff({ label = "Recipe colours", get = function() return db.enabled end,
+    set = function(v) db.enabled = v; ns.Apply() end })
+app:Reset(nil, "the colours", function() ns.ResetColors() end)
 app:Command("check", "check", "what the game says about the selected recipe (for bug reports)", function()
     app:Print(ns.CheckText())
 end)
-app:Command("feedback", "feedback", "a link for bugs and ideas", function() app:ShowFeedback() end, { "bug" })
 
 app:Section("main", "CraftColors", function(stack)
     UI.Header(stack, "Recipe colours", "Open a profession: each recipe name shows how likely it is to raise your skill.")
@@ -224,5 +224,4 @@ app:Section("main", "CraftColors", function(stack)
     UI.ButtonRow(stack, { { label = "Check again", width = 140, onClick = function() app:Refresh() end } })
 end)
 
-SLASH_CRAFTCOLORS1 = "/craftcolors"
-SlashCmdList.CRAFTCOLORS = function(msg) app:HandleSlash(msg) end
+app:RegisterSlash("CRAFTCOLORS") -- /ccolors, also /craftcolors

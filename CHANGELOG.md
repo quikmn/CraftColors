@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Chat commands now follow one pattern across all EverlookDB addons: `/ccolors help` (or `?`) lists them. New short name `/ccolors` (`/craftcolors` still works); `/ccolors on`, `off` and `toggle` for the colouring; `get` and `set <setting> <value>`; `search <words>`; `status` and `version`; `/ccolors reset` asks first (type it again within 10 seconds); a mistyped command suggests the nearest one.
 - The settings window has a search box at the top: type to find any setting.
 
 ## v0.2.0 (2026-11-17)
