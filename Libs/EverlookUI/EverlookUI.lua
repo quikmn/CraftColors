@@ -1498,6 +1498,7 @@ end
 
 -- spec: name, addon (folder name), version (else the TOC's), tagline, slash ("/whack"), aliases ({ "/whackit" }: more
 -- slash words, kept working and named in help), shortSettings (false: settings only as "/x set <setting> <value>"),
+-- chatSearch (false: help doesn't offer "/x search <words>"), windowDesc (what a bare /x opens, for help),
 -- accent { r, g, b },
 -- frameName (prefix for global frame names; default name without spaces), width, height,
 -- position (function returning the table the window position is saved in, as .window),
@@ -1764,7 +1765,8 @@ end
 
 -- The built-in verbs this app offers (for help and suggestions).
 function App:Verbs()
-	local v = { "help", "get", "set", "search", "status", "version" }
+	local v = { "help", "get", "set", "status", "version" }
+	if self.spec.chatSearch ~= false then v[#v + 1] = "search" end
 	if self.onOff then v[#v + 1] = "on"; v[#v + 1] = "off"; v[#v + 1] = "toggle" end
 	if self.movable then v[#v + 1] = "lock"; v[#v + 1] = "unlock" end
 	if self.resetOrder and #self.resetOrder > 0 then v[#v + 1] = "reset" end
@@ -1776,7 +1778,7 @@ function App:Help()
 	self:Print(self:Version() .. (self.spec.tagline and (" - " .. self.spec.tagline) or ""))
 	local cc, s = self:ColorCode(), self.slash
 	local function line(cmd, desc) DEFAULT_CHAT_FRAME:AddMessage("  " .. cc .. U.Escape(cmd) .. "|r - " .. desc) end
-	line(s, "open the settings window")
+	line(s, self.spec.windowDesc or "open the settings window")
 	for _, c in ipairs(self.commandOrder) do
 		if not c.hidden then line(s .. " " .. c.usage, c.desc or "") end
 	end
@@ -1797,7 +1799,7 @@ function App:Help()
 		line(p .. "<setting> <value>", "change a setting, e.g. " .. U.Escape(p .. d.key .. " " .. self:Example(d)))
 		line(s .. " get [setting]", "every setting and its value, or one")
 	end
-	line(s .. " search <words>", "find a setting in the window")
+	if self.spec.chatSearch ~= false then line(s .. " search <words>", "find a setting in the window") end
 	if self.spec.feedbackURL and not cmds.feedback then line(s .. " feedback", "a link for bugs and ideas") end
 	line(s .. " status | version | help", "how it is doing, its version, this list")
 	if self.spec.aliases and #self.spec.aliases > 0 then
