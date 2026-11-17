@@ -1572,6 +1572,20 @@ function App:CreateWindow()
 		logo:SetPoint("TOPLEFT", 18, -18)
 		logo:SetWidth(SIDEBAR_W - 30)
 		logo:SetText(self.name)
+		-- a long single word ("MouseoverMacros") can't wrap and was cut off: shrink until the widest word fits
+		local font, size, flags = logo:GetFont()
+		if font and size then
+			local widest = 0
+			for word in tostring(self.name):gmatch("%S+") do
+				logo:SetText(word)
+				widest = math.max(widest, logo.GetUnboundedStringWidth and logo:GetUnboundedStringWidth() or logo:GetStringWidth() or 0)
+			end
+			local room = SIDEBAR_W - 30
+			if widest > room then
+				logo:SetFont(font, math.max(11, math.floor(size * room / widest)), flags)
+			end
+			logo:SetText(self.name)
+		end
 		local ver = Text(side, T.fontSmall, T.muted)
 		ver:SetPoint("TOPLEFT", logo, "BOTTOMLEFT", 0, -3)
 		ver:SetText(self:Version())
