@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## v0.3.0 (2026-11-18)
 
 - Settings: an AI help button copies a description of every setting for an AI assistant, and `/ccolors apply` runs the commands it gives back.
 - Chat commands now follow one pattern across all EverlookDB addons: `/ccolors help` (or `?`) lists them. New short name `/ccolors` (`/craftcolors` still works); `/ccolors on`, `off` and `toggle` for the colouring; `get` and `set <setting> <value>`; `search <words>`; `status` and `version`; `/ccolors reset` asks first (type it again within 10 seconds); a mistyped command suggests the nearest one.
