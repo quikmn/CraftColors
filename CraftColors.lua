@@ -1,4 +1,5 @@
--- CraftColors: tint recipe names in ProfessionsFrame by relative difficulty.
+-- CraftColors: tint recipe names in ProfessionsFrame (and the classic TradeSkillFrame / CraftFrame, if
+-- the client uses them) by relative difficulty.
 -- Orange = guaranteed skill-up, yellow = likely, green = rare, gray = none.
 -- /craftcolors opens the settings window; /craftcolors help lists the commands.
 
@@ -75,8 +76,14 @@ local function Recolor(frame)
         frame.ccApplied = nil
         return
     end
-    local info = GetRecipeInfo(frame)
-    local c = info and ns.ColorFor(info.relativeDifficulty)
+    local c
+    if frame.ccColorName then
+        local name = frame:ccColorName()
+        c = name and db.colors[name]
+    else
+        local info = GetRecipeInfo(frame)
+        c = info and ns.ColorFor(info.relativeDifficulty)
+    end
     if not c then frame.ccApplied = nil; return end
     if frame.IsMouseOver and frame:IsMouseOver() then
         local b = db.hoverBoost or 0
@@ -131,11 +138,79 @@ local function TryHookProfessions()
     return true
 end
 
+-- Classic-style windows, in case this client opens them for some professions: the trade skill window
+-- (Blizzard_TradeSkillUI) and the craft window Enchanting uses in Classic (Blizzard_CraftUI). Their rows
+-- are fixed buttons (TradeSkillSkill1.., Craft1..) and the difficulty comes as a word ("optimal", ...).
+local SKILL_TYPES = { optimal = "orange", medium = "yellow", easy = "green", trivial = "gray" }
+ns.SKILL_TYPES = SKILL_TYPES
+local CLASSIC = {
+    {
+        addon = "Blizzard_TradeSkillUI", frame = "TradeSkillFrame", update = "TradeSkillFrame_Update",
+        prefix = "TradeSkillSkill", count = "TRADE_SKILLS_DISPLAYED",
+        kind = function(index) local _, skillType = GetTradeSkillInfo(index); return skillType end,
+    },
+    {
+        addon = "Blizzard_CraftUI", frame = "CraftFrame", update = "CraftFrame_Update",
+        prefix = "Craft", count = "CRAFTS_DISPLAYED",
+        kind = function(index) local _, _, craftType = GetCraftInfo(index); return craftType end,
+    },
+}
+ns.CLASSIC = CLASSIC
+local classicRows = setmetatable({}, { __mode = "k" })
+
+local function ClassicRow(win, button)
+    local row = classicRows[button]
+    if row then return row end
+    local label = _G[button:GetName() .. "Text"] or (button.GetFontString and button:GetFontString())
+    if not label then return end
+    row = {
+        Label = label,
+        IsMouseOver = function() return button.IsMouseOver and button:IsMouseOver() end,
+        ccColorName = function()
+            local index = button.GetID and button:GetID()
+            if not index or index < 1 then return end
+            local ok, kind = pcall(win.kind, index)
+            return ok and SKILL_TYPES[kind] or nil
+        end,
+    }
+    classicRows[button] = row
+    -- the game repaints the name on hover; tint again after it
+    if button.HookScript then
+        button:HookScript("OnEnter", function() Recolor(row) end)
+        button:HookScript("OnLeave", function() Recolor(row) end)
+    end
+    return row
+end
+
+local function RefreshClassic(win)
+    for i = 1, tonumber(_G[win.count]) or 8 do
+        local button = _G[win.prefix .. i]
+        if button and button.IsShown and button:IsShown() then
+            local row = ClassicRow(win, button)
+            if row then Recolor(row) end
+        end
+    end
+end
+
+local function TryHookClassic()
+    for _, win in ipairs(CLASSIC) do
+        if not win.hooked and type(_G[win.update]) == "function" then
+            win.hooked = true
+            hooksecurefunc(win.update, function() RefreshClassic(win) end)
+        end
+    end
+end
+ns.TryHookClassic = TryHookClassic
+
 -- Recolour an open profession window right away after a setting changes (turning it off puts the
 -- game's own colours back).
 function ns.Apply()
     local scrollBox = scrollBoxHooked and RecipeScrollBox()
     if scrollBox then RefreshAll(scrollBox) end
+    for _, win in ipairs(CLASSIC) do
+        local frame = _G[win.frame]
+        if win.hooked and frame and frame:IsShown() then RefreshClassic(win) end
+    end
 end
 
 -- The recipe selected in the profession window (for checking what the game reports).
@@ -162,6 +237,9 @@ f:SetScript("OnEvent", function(_, event, arg1)
         CraftColorsDB = UI.Util.FillDefaults(type(CraftColorsDB) == "table" and CraftColorsDB or {}, ns.DEFAULTS)
         db = CraftColorsDB
         ns.db = db
+    end
+    if event == "ADDON_LOADED" and (arg1 == "Blizzard_TradeSkillUI" or arg1 == "Blizzard_CraftUI" or arg1 == ADDON) then
+        TryHookClassic()
     end
     if event == "ADDON_LOADED" and arg1 ~= "Blizzard_Professions" and arg1 ~= ADDON then return end
     if TryHookProfessions() and event ~= "ADDON_LOADED" then

@@ -4,6 +4,7 @@
 
 - The settings window no longer shows the developer check of the selected recipe; type `/ccolors debug` for it when reporting a bug (`/ccolors check` still works).
 - Turning the colours off no longer leaves a recipe stuck in its mouse-over colour.
+- Recipe names are also coloured if a profession opens in the older-style trade skill or craft window instead of the usual profession window.
 
 ## v0.3.0 (2026-11-18)
 

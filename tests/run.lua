@@ -154,6 +154,45 @@ step("chat commands follow the shared pattern: both names, on/off, get/set, sugg
 	check(last():find("Recipe colours:", 1, true), "status: " .. last())
 end)
 
+step("classic trade skill and craft windows are coloured too, if the client has them", function()
+	local colors, scripts = {}, {}
+	local types = { [11] = "optimal", [12] = "trivial", [13] = "header" }
+	local function button(name, id)
+		local label = { SetTextColor = function(_, r, g, b) colors[name] = { r, g, b } end,
+			GetTextColor = function() local c = colors[name] or { 1, 0.82, 0 }; return c[1], c[2], c[3] end }
+		_G[name .. "Text"] = label
+		_G[name] = { GetName = function() return name end, GetID = function() return id end, IsShown = function() return true end,
+			IsMouseOver = function() return false end, HookScript = function(_, k, fn) scripts[name .. k] = fn end }
+	end
+	button("TradeSkillSkill1", 11); button("TradeSkillSkill2", 12); button("TradeSkillSkill3", 13)
+	TRADE_SKILLS_DISPLAYED = 3
+	GetTradeSkillInfo = function(i) return "Recipe " .. i, types[i] end
+	TradeSkillFrame = { IsShown = function() return true end }
+	local painted = 0
+	TradeSkillFrame_Update = function() painted = painted + 1 end
+	MOCK.Fire("ADDON_LOADED", "Blizzard_TradeSkillUI")
+	TradeSkillFrame_Update()
+	check(painted == 1, "game's own update not called")
+	check(colors.TradeSkillSkill1 and colors.TradeSkillSkill1[2] == 0.5, "optimal not orange")
+	check(colors.TradeSkillSkill2 and colors.TradeSkillSkill2[1] == 0.5 and colors.TradeSkillSkill2[3] == 0.5, "trivial not gray")
+	check(colors.TradeSkillSkill3 == nil, "header row tinted")
+	check(scripts.TradeSkillSkill1OnEnter and scripts.TradeSkillSkill1OnLeave, "hover not hooked")
+	SlashCmdList.CRAFTCOLORS("off")
+	check(colors.TradeSkillSkill1[1] == 1 and colors.TradeSkillSkill1[2] == 0.82, "own colour not back: " .. table.concat(colors.TradeSkillSkill1, ","))
+	SlashCmdList.CRAFTCOLORS("on")
+	check(colors.TradeSkillSkill1[2] == 0.5, "not tinted again after on")
+	-- the craft window (Enchanting in Classic)
+	button("Craft1", 21)
+	CRAFTS_DISPLAYED = 1
+	GetCraftInfo = function() return "Enchant Bracer", "", "medium" end
+	CraftFrame_Update = function() end
+	MOCK.Fire("ADDON_LOADED", "Blizzard_CraftUI")
+	CraftFrame_Update()
+	check(colors.Craft1 and colors.Craft1[1] == 1 and colors.Craft1[2] == 1 and colors.Craft1[3] == 0, "craft medium not yellow")
+	TradeSkillFrame, TradeSkillFrame_Update, GetTradeSkillInfo, CraftFrame_Update, GetCraftInfo = nil, nil, nil, nil, nil
+	for _, n in ipairs({ "TradeSkillSkill1", "TradeSkillSkill2", "TradeSkillSkill3", "Craft1" }) do _G[n], _G[n .. "Text"] = nil, nil end
+end)
+
 step("no taint: only our own globals; no Blizzard popups", function()
 	local allowed = { CraftColorsDB = true, SLASH_CRAFTCOLORS1 = true, LibStub = true }
 	for k in pairs(globalWrites) do check(allowed[k], "addon assigned the global " .. tostring(k)) end
