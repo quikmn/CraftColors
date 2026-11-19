@@ -178,6 +178,34 @@ step("turning colouring off puts the label's own colour back", function()
 	check(color[1] == 0.25, "not recoloured after turning back on")
 end)
 
+step("turning colouring off never leaves a row in a stale hover colour", function()
+	local NORMAL, HOVER = { 0.9, 0.8, 0.1 }, { 1, 1, 1 }
+	local color = { NORMAL[1], NORMAL[2], NORMAL[3] }
+	local over = false
+	local row = {
+		Label = { SetTextColor = function(_, r, g, b) color = { r, g, b } end, GetTextColor = function() return color[1], color[2], color[3] end },
+		GetElementData = function() return { GetData = function() return { recipeInfo = { relativeDifficulty = Enum.TradeskillRelativeDifficulty.Easy } } end } end,
+		IsMouseOver = function() return over end,
+	}
+	-- the game paints the hover colour, we tint over it
+	over = true
+	color = { HOVER[1], HOVER[2], HOVER[3] }
+	ns.Recolor(row)
+	-- mouse leaves: the game paints its normal colour, we tint again
+	over = false
+	color = { NORMAL[1], NORMAL[2], NORMAL[3] }
+	ns.Recolor(row)
+	check(color[1] == 0.25, "not tinted")
+	CraftColorsDB.enabled = false
+	ns.Recolor(row)
+	check(color[1] == 0.9 and color[2] == 0.8 and color[3] == 0.1, "left in hover colour: " .. table.concat(color, ","))
+	-- while off, a game repaint (hover) is left alone
+	color = { HOVER[1], HOVER[2], HOVER[3] }
+	ns.Recolor(row)
+	check(color[1] == 1 and color[3] == 1, "touched the game's own hover colour while off")
+	CraftColorsDB.enabled = true
+end)
+
 step("no Lua errors reported", function()
 	check(#MOCK.errors == 0, table.concat(MOCK.errors, "\n"))
 end)

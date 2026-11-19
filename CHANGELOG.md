@@ -3,6 +3,7 @@
 ## Unreleased
 
 - The settings window no longer shows the developer check of the selected recipe; type `/ccolors debug` for it when reporting a bug (`/ccolors check` still works).
+- Turning the colours off no longer leaves a recipe stuck in its mouse-over colour.
 
 ## v0.3.0 (2026-11-18)
 

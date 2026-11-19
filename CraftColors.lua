@@ -47,27 +47,42 @@ local function GetRecipeInfo(frame)
     return data and data.recipeInfo
 end
 
+local function Same(c, r, g, b)
+    return c and math.abs(c[1] - r) < 0.002 and math.abs(c[2] - g) < 0.002 and math.abs(c[3] - b) < 0.002
+end
+
+-- Remember the colour the game last painted the label (normal, hover or selected). Rows are recycled and
+-- the game repaints on hover and selection, so a colour saved once goes stale; this runs after each repaint.
+local function NoteGameColor(frame)
+    if not frame.Label.GetTextColor then return end
+    local r, g, b = frame.Label:GetTextColor()
+    if not r or Same(frame.ccApplied, r, g, b) then return end -- still our tint: the game didn't repaint
+    frame.ccGameColor = { r, g, b }
+end
+
+local function Paint(frame, r, g, b)
+    frame.Label:SetTextColor(r, g, b)
+    frame.ccApplied = { r, g, b }
+end
+
 local function Recolor(frame)
     if not db or not frame.Label then return end
+    NoteGameColor(frame)
     if not db.enabled then
-        -- put back the label's own colour (saved before we first tinted it)
-        local o = frame.ccOrigColor
-        if o then frame.Label:SetTextColor(o[1], o[2], o[3]) end
+        -- put back the game's own colour, but only over a tint of ours
+        local o = frame.ccGameColor
+        if frame.ccApplied and o then frame.Label:SetTextColor(o[1], o[2], o[3]) end
+        frame.ccApplied = nil
         return
     end
     local info = GetRecipeInfo(frame)
-    if not info then return end
-    if not frame.ccOrigColor and frame.Label.GetTextColor then
-        local r, g, b = frame.Label:GetTextColor()
-        if r then frame.ccOrigColor = { r, g, b } end
-    end
-    local c = ns.ColorFor(info.relativeDifficulty)
-    if not c then return end
+    local c = info and ns.ColorFor(info.relativeDifficulty)
+    if not c then frame.ccApplied = nil; return end
     if frame.IsMouseOver and frame:IsMouseOver() then
         local b = db.hoverBoost or 0
-        frame.Label:SetTextColor(math.min(c[1] + b, 1), math.min(c[2] + b, 1), math.min(c[3] + b, 1))
+        Paint(frame, math.min(c[1] + b, 1), math.min(c[2] + b, 1), math.min(c[3] + b, 1))
     else
-        frame.Label:SetTextColor(c[1], c[2], c[3])
+        Paint(frame, c[1], c[2], c[3])
     end
 end
 ns.Recolor = Recolor
