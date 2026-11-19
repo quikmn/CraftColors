@@ -205,9 +205,10 @@ end
 app:OnOff({ label = "Recipe colours", get = function() return db.enabled end,
     set = function(v) db.enabled = v; ns.Apply() end })
 app:Reset(nil, "the colours", function() ns.ResetColors() end)
-app:Command("check", "check", "what the game says about the selected recipe (for bug reports)", function()
+-- Developer check, kept out of the settings window: /ccolors debug (the old /ccolors check still works).
+app:Command("debug", "debug", "what the game says about the selected recipe (for bug reports)", function()
     app:Print(ns.CheckText())
-end)
+end, { "check" })
 
 app:Section("main", "CraftColors", function(stack)
     UI.Header(stack, "Recipe colours", "Open a profession: each recipe name shows how likely it is to raise your skill.")
@@ -219,9 +220,6 @@ app:Section("main", "CraftColors", function(stack)
         { label = "Back to default colours", width = 200, confirm = true, onClick = function() ns.ResetColors() end,
             keywords = { "reset", "defaults", "colors" } },
     })
-    UI.Header(stack, "Selected recipe", "What the game says about the recipe selected in the profession window (handy for bug reports).")
-    UI.Note(stack, ns.CheckText)
-    UI.ButtonRow(stack, { { label = "Check again", width = 140, onClick = function() app:Refresh() end } })
 end)
 
 app:RegisterSlash("CRAFTCOLORS") -- /ccolors, also /craftcolors

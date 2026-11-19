@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- The settings window no longer shows the developer check of the selected recipe; type `/ccolors debug` for it when reporting a bug (`/ccolors check` still works).
+
 ## v0.3.0 (2026-11-18)
 
 - Settings: an AI help button copies a description of every setting for an AI assistant, and `/ccolors apply` runs the commands it gives back.

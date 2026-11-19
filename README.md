@@ -13,7 +13,7 @@ WoW Forever (interface 16001). Colors recipe names in the profession window by s
 - `/ccolors` opens the settings window: colouring on or off, your own colour for each difficulty, how much the row under the mouse brightens. It's also under Settings > AddOns.
 - `/ccolors off`, `/ccolors on` (or `toggle`): the colouring.
 - `/ccolors orange ff8040` (or `yellow`, `green`, `gray`, `hover 0.3`), or `/ccolors set orange ff8040`: change a setting; `/ccolors get` lists them.
-- `/ccolors check` prints what the game says about the selected recipe (handy for bug reports).
+- `/ccolors debug` prints what the game says about the selected recipe (handy for bug reports; `/ccolors check` still works).
 - `/ccolors reset` puts the colours back (type it twice within 10 seconds).
 - `/ccolors search <words>` opens the window with its search box filled; `/ccolors status`, `/ccolors version`.
 - `/ccolors feedback` shows a link for reporting bugs and ideas. `/ccolors help` (or `?`) lists every command; a mistyped one suggests the nearest.

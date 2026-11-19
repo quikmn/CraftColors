@@ -92,7 +92,7 @@ step("every subcommand and setting works from chat", function()
 	MOCK.log = {}
 	SlashCmdList.CRAFTCOLORS("help")
 	local all = table.concat(MOCK.log, "\n")
-	check(all:find("/ccolors check", 1, true) and all:find("/ccolors reset", 1, true) and all:find("/ccolors feedback", 1, true)
+	check(all:find("/ccolors debug", 1, true) and all:find("/ccolors reset", 1, true) and all:find("/ccolors feedback", 1, true)
 		and all:find("/ccolors on || off || toggle", 1, true) and all:find("Also works as /craftcolors", 1, true), "help: " .. all)
 	SlashCmdList.CRAFTCOLORS("enabled off")
 	check(CraftColorsDB.enabled == false and last():find("off", 1, true), "enabled off: " .. last())
@@ -110,7 +110,7 @@ step("every subcommand and setting works from chat", function()
 	SlashCmdList.CRAFTCOLORS("check")
 	check(last():find("select a recipe", 1, true), "check without a profession: " .. last())
 	ProfessionsFrame = { CraftingPage = { SchematicForm = { GetRecipeInfo = function() return { name = "Bolt|of Cloth", relativeDifficulty = Enum.TradeskillRelativeDifficulty.Medium, numSkillUps = 1, canSkillUp = true } end } } }
-	SlashCmdList.CRAFTCOLORS("check")
+	SlashCmdList.CRAFTCOLORS("debug")
 	check(last():find("Bolt||of Cloth", 1, true) and last():find("yellow", 1, true), "check: " .. last())
 	ProfessionsFrame = nil
 	SlashCmdList.CRAFTCOLORS("reset")
