@@ -1,6 +1,7 @@
 # Changelog
 
 ## Unreleased
+- Settings window: switches, buttons and sliders use a softer shade of the accent colour, an on switch has a dark knob so it stands out, and boxes have cleaner rounded edges.
 
 - The settings window no longer shows the developer check of the selected recipe; type `/ccolors debug` for it when reporting a bug (`/ccolors check` still works).
 - Turning the colours off no longer leaves a recipe stuck in its mouse-over colour.
