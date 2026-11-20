@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## v0.5.0 (2026-11-20)
 - After each yellow and green recipe in the profession window: the chance that one craft raises your skill ("37%", in the recipe's colour). It needs EverlookDB Crafting, which knows each recipe's yellow and gray skill; without it the names are only coloured.
 - After each recipe: how many you can make from your bags ("(4)"). Turn on "Also count my bank and other characters" to see how many more ("(4 +5)"). Where the game already shows the number after the name, it isn't said twice.
 - New settings for both, in /ccolors.
