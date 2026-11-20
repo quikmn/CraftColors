@@ -26,7 +26,8 @@
 -- ButtonRow, TextArea, ScrollPage. Bound widgets take { label, desc, get, set, disabled, after } and have :Refresh().
 -- The mouse wheel scrolls the page: sliders and dropdowns never take it. The page scroll bar is 12 px and draggable.
 --
--- Search: every window has a search box (Ctrl+F; Escape clears it, then closes the window).
+-- Search: every window has a search box (Ctrl+F; Escape clears it, then closes the window). It sits at the top of the
+-- sidebar, or top centre over the page with spec.searchTop = true (EverlookUI 10).
 -- It finds settings (app:Widget), plain toggles, sliders, dropdowns, colour swatches and button rows on any
 -- page, by label, description, page and heading, a dropdown's value and choices, the chat-command name and
 -- optional keywords: app:Setting({ ..., keywords = { "opacity", "alpha" } }) or a widget's/button's opt.keywords.
@@ -35,7 +36,7 @@
 -- AI help (EverlookUI 5): an "AI help" link in the window and "/x ai" copy a description of every setting
 -- for an AI assistant; "/x apply" takes its answer back (see "AI help" below and COMMANDS.md).
 local LIB_ADDON = ... -- the folder of the addon whose copy this is (its Media\ sits next to this file)
-local MAJOR, MINOR = "EverlookUI-1", 9
+local MAJOR, MINOR = "EverlookUI-1", 10
 local UI = LibStub:NewLibrary(MAJOR, MINOR)
 if not UI then return end
 UI.version = MINOR
@@ -1465,7 +1466,8 @@ end
 
 ------------------------------------------------------------------------
 -- List: rows of data with an optional switch on the left and buttons on the right.
--- opt.items() -> array; opt.title(item); opt.detail(item); opt.icon(item); opt.color(item) (title colour)
+-- opt.items() -> array; opt.title(item); opt.detail(item); opt.icon(item) (a texture, or a line icon name in the
+-- accent colour); opt.color(item) (title colour)
 -- opt.toggle = { get(item), set(item, on) }; opt.buttons = { { label = text or fn(item), width, style,
 -- onClick(item, button), shown(item), usable(item), confirm } }; opt.tooltip(item) (lines or a hook
 -- function(row, item)); opt.onClick(item); opt.empty (text when there are no rows); opt.max (rows shown);
@@ -1583,7 +1585,15 @@ function UI.List(stack, opt)
 			if r.icon then
 				local icon = opt.icon(item)
 				r.icon:SetShown(icon ~= nil)
-				if icon then r.icon:SetTexture(icon) end
+				-- a line icon name ("user", "hammer") in the accent colour (EverlookUI 10), else a texture
+				if icon and UI.IsIconName(icon) then
+					UI.SetIcon(r.icon, icon)
+					r.icon:SetVertexColor(rgba(T.accent))
+				elseif icon then
+					r.icon:SetTexture(icon)
+					r.icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
+					r.icon:SetVertexColor(1, 1, 1)
+				end
 			end
 			if r.switch then r.switch:SetOn(opt.toggle.get(item) and true or false) end
 			for bi, d in ipairs(opt.buttons or {}) do
@@ -2053,6 +2063,8 @@ local SIDEBAR_W = 196 -- the sidebar of a window with more than one page
 local HEADER_H = 72   -- the page title and description (taller for a long description or a preview)
 local FOOTER_H = 48   -- the footer bar: profile picker on the left, Undo on the right
 local MIN_H = 420
+local TOPBAR_H = 44   -- spec.searchTop: the bar over the page that holds the search box, top centre
+local TOPSEARCH_W = 300
 UI.SIDEBAR_W, UI.FOOTER_H = SIDEBAR_W, FOOTER_H
 
 -- The window width. EverlookUI 6 windows were 780 (sidebar) or 600 px wide by default and addons sized their pages
@@ -2072,7 +2084,7 @@ end
 -- spec: name, addon (folder name), version (else the TOC's), tagline, slash ("/whack"), aliases ({ "/whackit" }: more
 -- slash words, kept working and named in help), shortSettings (false: settings only as "/x set <setting> <value>"),
 -- chatSearch (false: help doesn't offer "/x search <words>"), windowDesc (what a bare /x opens, for help),
--- accent { r, g, b },
+-- accent { r, g, b }, searchTop (true: the search box top centre over the page instead of in the sidebar),
 -- frameName (prefix for global frame names; default name without spaces), width, height,
 -- position (function returning the table the window position is saved in, as .window),
 -- buttons ({ { label, onClick(app, button), text = fn() -> label } } shown under the sidebar or along the bottom),
@@ -3348,10 +3360,23 @@ function App:CreateWindow()
 		end
 		local headBottom = math.max(18 + 30, 17 + math.ceil(logo:GetStringHeight() or 16) + 3 + 12)
 
-		-- the search box under it
-		local box = self:CreateSearch(f, SIDEBAR_W - 24, side)
-		box:SetPoint("TOPLEFT", f, "TOPLEFT", 13, -(headBottom + 14))
-		local navTop = headBottom + 14 + 26 + 14
+		-- the search box under it, or top centre over the page (spec.searchTop)
+		local navTop
+		if spec.searchTop then
+			local topBar = CreateFrame("Frame", nil, f)
+			topBar:SetPoint("TOPLEFT", f, "TOPLEFT", SIDEBAR_W + 1, 0)
+			topBar:SetPoint("TOPRIGHT", f, "TOPRIGHT", 0, 0)
+			topBar:SetHeight(TOPBAR_H)
+			local box = self:CreateSearch(f, TOPSEARCH_W, topBar)
+			box:SetPoint("TOP", topBar, "TOP", 0, -14)
+			f.topBar = topBar
+			f.headerOffset = TOPBAR_H
+			navTop = headBottom + 18
+		else
+			local box = self:CreateSearch(f, SIDEBAR_W - 24, side)
+			box:SetPoint("TOPLEFT", f, "TOPLEFT", 13, -(headBottom + 14))
+			navTop = headBottom + 14 + 26 + 14
+		end
 
 		-- the pages
 		f.navButtons = {}
@@ -3413,11 +3438,11 @@ function App:CreateWindow()
 
 		-- the page header
 		f.pageTitle = Text(f, T.fontHuge, T.text)
-		f.pageTitle:SetPoint("TOPLEFT", CL, -20)
+		f.pageTitle:SetPoint("TOPLEFT", CL, -(20 + (f.headerOffset or 0)))
 		f.pageTitle:SetWordWrap(false)
 		f.pageDesc = Text(f, T.fontSmall + 1, T.muted)
 		f.pageDesc:SetPoint("TOPLEFT", f.pageTitle, "BOTTOMLEFT", 0, -6)
-		top = HEADER_H
+		top = HEADER_H + (f.headerOffset or 0)
 	else
 		-- one page: icon, name and "v1.0 · /cmd" in a title row, the search box on its right, the tagline under it
 		local icon = self:MakeAppIcon(f, 28)
@@ -3680,7 +3705,7 @@ function App:UpdatePageHeader()
 		end
 		pw, ph = def.frame:GetWidth() or 0, def.frame:GetHeight() or 0
 		def.frame:ClearAllPoints()
-		def.frame:SetPoint("TOPRIGHT", f, "TOPRIGHT", -44, -14)
+		def.frame:SetPoint("TOPRIGHT", f, "TOPRIGHT", -44, -(14 + (f.headerOffset or 0)))
 		def.frame:Show()
 		self:RefreshPreview()
 	end
@@ -3690,8 +3715,9 @@ function App:UpdatePageHeader()
 	f.pageTitle:SetText(s and s.title or "")
 	f.pageDesc:SetText(s and s.desc or "")
 	f.pageDesc:SetShown(s ~= nil and s.desc ~= nil and s.desc ~= "")
-	local textH = 20 + 22 + ((s and s.desc and s.desc ~= "") and (6 + math.ceil(f.pageDesc:GetStringHeight() or 12)) or 0) + 14
-	local top = math.max(HEADER_H, textH, ph > 0 and (14 + ph + 14) or 0)
+	local off = f.headerOffset or 0
+	local textH = off + 20 + 22 + ((s and s.desc and s.desc ~= "") and (6 + math.ceil(f.pageDesc:GetStringHeight() or 12)) or 0) + 14
+	local top = math.max(HEADER_H + off, textH, ph > 0 and (off + 14 + ph + 14) or 0)
 	if top ~= f.headerTop then
 		f.headerTop = top
 		f.content:ClearAllPoints()
