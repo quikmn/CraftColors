@@ -245,6 +245,74 @@ step("turning colouring off never leaves a row in a stale hover colour", functio
 	CraftColorsDB.enabled = true
 end)
 
+step("after the name: skill-up chance (with EverlookDB Crafting) and how many you can make", function()
+	local bags, bank = { [10] = 9, [11] = 2 }, { [10] = 4, [11] = 6 }
+	C_Item = C_Item or {}
+	local oldCount = C_Item.GetItemCount
+	C_Item.GetItemCount = function(id, withBank) return (bags[id] or 0) + (withBank and (bank[id] or 0) or 0) end
+	local skill, linked = 60, false
+	C_TradeSkillUI = {
+		GetBaseProfessionInfo = function() return { skillLevel = skill } end,
+		IsTradeSkillLinked = function() return linked end,
+		GetRecipeSchematic = function(id)
+			if id == 7 then return { reagentSlotSchematics = { { reagents = { { itemID = 10 } }, quantityRequired = 3 } } } end
+		end,
+	}
+	local info = { recipeID = 7, relativeDifficulty = Enum.TradeskillRelativeDifficulty.Medium }
+	-- without EverlookDB Crafting: no chance, the count from the window's reagents (9 / 3)
+	EverlookCraftAPI = nil
+	check(ns.ExtraText(info, "Linen Bag") == "|cffffffff(3)|r", "count without the API: " .. tostring(ns.ExtraText(info, "Linen Bag")))
+	-- with it: yellow at 60 of 50..70 gray -> (70-60)/(70-50) = 50%, in CraftColors' yellow; stock with bank and alts
+	EverlookCraftAPI = { version = 2,
+		recipe = function(id) if id == 7 then return { yellow = 50, green = 65, gray = 70, mats = { { 10, 3 }, { 11, 1 } } } end end,
+		chance = function(id, s) return (70 - s) / (70 - 50) end,
+		stock = function(id) return { bags = bags[id] or 0, bank = bank[id] or 0, alts = id == 10 and 20 or 0 } end,
+	}
+	local t = ns.ExtraText(info, "Linen Bag")
+	check(t:find("50%", 1, true) and t:find("ffff00", 1, true), "chance in yellow: " .. t)
+	check(t:find("(2)", 1, true), "count limited by the scarcer reagent (2 of item 11): " .. t)
+	check(not t:find("+", 1, true), "bank and alts counted while off: " .. t)
+	CraftColorsDB.countMore = true
+	t = ns.ExtraText(info, "Linen Bag")
+	-- (9+4+20)/3 = 11, (2+6)/1 = 8 -> 8, 6 more than the bags' 2
+	check(t:find("(2 |cff8d94a3+6", 1, true), "bank and alts: " .. t)
+	-- the game already shows "[2]" after the name: only the extra
+	t = ns.ExtraText(info, "Linen Bag [2]")
+	check(not t:find("(2", 1, true) and t:find("(+6)", 1, true), "count said twice: " .. t)
+	CraftColorsDB.countMore = false
+	-- orange (100%) and gray (0%) show no chance
+	skill = 40
+	check(not (ns.ExtraText(info, "x") or ""):find("%%"), "chance on an orange recipe")
+	skill = 70
+	check(not (ns.ExtraText(info, "x") or ""):find("%%"), "chance on a gray recipe")
+	skill = 60
+	-- settings off
+	CraftColorsDB.showChance, CraftColorsDB.showCount = false, false
+	check(ns.ExtraText(info, "x") == nil, "shown while off")
+	CraftColorsDB.showChance, CraftColorsDB.showCount = true, true
+	-- someone else's window: nothing
+	linked = true
+	check(ns.ExtraText(info, "x") == nil, "shown on a linked window")
+	linked = false
+	-- a row frame gets the text after its name, hidden when colouring is off
+	local row = CreateFrame("Button", nil, UIParent)
+	row.Label = row:CreateFontString(nil, "OVERLAY")
+	row.Label:SetText("Linen Bag")
+	row.Label:SetWidth(200)
+	row.GetElementData = function() return { GetData = function() return { recipeInfo = info } end } end
+	ns.Recolor(row)
+	check(row.ccExtra and row.ccExtra:IsShown() and row.ccExtra:GetText():find("50%", 1, true), "row text")
+	SlashCmdList.CRAFTCOLORS("chance off")
+	check(CraftColorsDB.showChance == false, "chance from chat")
+	SlashCmdList.CRAFTCOLORS("chance on")
+	CraftColorsDB.enabled = false
+	ns.Recolor(row)
+	check(not row.ccExtra:IsShown(), "extra text while colouring is off")
+	CraftColorsDB.enabled = true
+	EverlookCraftAPI, C_TradeSkillUI = nil, nil
+	C_Item.GetItemCount = oldCount
+end)
+
 step("no Lua errors reported", function()
 	check(#MOCK.errors == 0, table.concat(MOCK.errors, "\n"))
 end)
