@@ -78,6 +78,7 @@ local function Recolor(frame)
         if frame.ccApplied and o then frame.Label:SetTextColor(o[1], o[2], o[3]) end
         frame.ccApplied = nil
         if frame.ccExtra then frame.ccExtra:Hide() end
+        if ns.RestoreLabel then ns.RestoreLabel(frame) end
         return
     end
     local c
@@ -359,14 +360,41 @@ function ns.ExtraText(info, label)
     return table.concat(parts, " ")
 end
 
+-- The game's own "[n]" (how many you can make) is a separate text after the name: its text when shown, else nil
+local function GameCount(frame)
+    local c = frame.Count
+    if type(c) ~= "table" or not (c.IsShown and c:IsShown() and c.GetText) then return nil end
+    local t = c:GetText()
+    return type(t) == "string" and t:find("%d") and c or nil
+end
+
+-- The label's width as the game set it, before we narrowed it (the game doesn't always set it again on reuse)
+local function BaseLabelWidth(frame)
+    local cur = frame.Label.GetWidth and frame.Label:GetWidth() or 0
+    if frame.ccSetW and math.abs(cur - frame.ccSetW) < 0.5 and frame.ccBaseW then return frame.ccBaseW end
+    frame.ccBaseW = cur
+    return cur
+end
+
+function ns.RestoreLabel(frame)
+    if frame.ccSetW and frame.ccBaseW and frame.Label.GetWidth and math.abs(frame.Label:GetWidth() - frame.ccSetW) < 0.5 then
+        frame.Label:SetWidth(frame.ccBaseW)
+    end
+    frame.ccSetW = nil
+end
+
 function ns.Extras(frame)
     if not frame.Label or not frame.CreateFontString then return end
     local info = GetRecipeInfo(frame)
     local textOf = frame.Label.GetText and frame.Label:GetText()
+    local count = GameCount(frame)
+    -- the game's "[n]" counts as the game showing the count, wherever it sits
+    if count then textOf = (textOf or "") .. " [" .. (count:GetText():match("%d+") or "0") .. "]" end
     local ok, t = pcall(ns.ExtraText, info, textOf)
     t = ok and t or nil
     if not t then
         if frame.ccExtra then frame.ccExtra:Hide() end
+        ns.RestoreLabel(frame)
         return
     end
     local fs = frame.ccExtra
@@ -377,14 +405,32 @@ function ns.Extras(frame)
         frame.ccExtra = fs
     end
     fs:SetText(t)
-    -- right after the name; never past the label's right edge
-    local nameW = frame.Label.GetStringWidth and frame.Label:GetStringWidth() or 0
-    local labelW = frame.Label.GetWidth and frame.Label:GetWidth() or nameW
-    local extraW = fs.GetStringWidth and fs:GetStringWidth() or 30
-    if not labelW or labelW <= 0 then labelW = nameW + extraW + 8 end
-    local x = math.max(0, math.min(nameW, labelW - extraW - 4))
+    -- after the name and the game's "[n]"; when the row is too narrow, the name gives way (the game shortens it
+    -- with "...") so nothing is drawn over it
+    local base = BaseLabelWidth(frame)
+    local extraW = (fs.GetStringWidth and fs:GetStringWidth()) or 30
+    local countW = count and count.GetStringWidth and (count:GetStringWidth() + 4) or 0
+    local left, right = frame.Label.GetLeft and frame.Label:GetLeft(), frame.GetRight and frame:GetRight()
+    local want = base
+    if left and right and base > 0 then
+        local room = right - left - 8 - countW - extraW - 4
+        if room < base then want = math.max(40, room) end
+    end
+    if want ~= base then
+        frame.Label:SetWidth(want)
+        frame.ccSetW = want
+    else
+        ns.RestoreLabel(frame)
+    end
     fs:ClearAllPoints()
-    fs:SetPoint("LEFT", frame.Label, "LEFT", x + 4, 0)
+    if count then
+        fs:SetPoint("LEFT", count, "RIGHT", 4, 0)
+    else
+        -- the label may be wider than its text: right after the text, within the label
+        local nameW = frame.Label.GetStringWidth and frame.Label:GetStringWidth() or 0
+        local labelW = frame.Label.GetWidth and frame.Label:GetWidth() or nameW
+        fs:SetPoint("LEFT", frame.Label, "LEFT", math.min(nameW, labelW > 0 and labelW or nameW) + 4, 0)
+    end
     fs:Show()
 end
 

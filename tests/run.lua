@@ -302,12 +302,25 @@ step("after the name: skill-up chance (with EverlookDB Crafting) and how many yo
 	row.GetElementData = function() return { GetData = function() return { recipeInfo = info } end } end
 	ns.Recolor(row)
 	check(row.ccExtra and row.ccExtra:IsShown() and row.ccExtra:GetText():find("50%", 1, true), "row text")
+	-- a narrow row: the name gives way so our text is never drawn over it (row 200 wide, our text 40)
+	check(math.abs(row.Label:GetWidth() - 148) < 0.01, "name narrowed for our text: " .. tostring(row.Label:GetWidth()))
+	ns.Recolor(row)
+	check(math.abs(row.Label:GetWidth() - 148) < 0.01, "narrowed again on a second pass (not twice): " .. tostring(row.Label:GetWidth()))
+	-- the game's own "[2]" after the name: we don't repeat the count, and sit after the game's
+	row.Count = row:CreateFontString(nil, "OVERLAY")
+	row.Count:SetText("[2]")
+	row.Count:Show()
+	ns.Recolor(row)
+	check(not row.ccExtra:GetText():find("(2)", 1, true), "count said twice next to the game's [2]: " .. row.ccExtra:GetText())
+	check(math.abs(row.Label:GetWidth() - 104) < 0.01, "room for the game's count too: " .. tostring(row.Label:GetWidth()))
+	row.Count:Hide()
 	SlashCmdList.CRAFTCOLORS("chance off")
 	check(CraftColorsDB.showChance == false, "chance from chat")
 	SlashCmdList.CRAFTCOLORS("chance on")
 	CraftColorsDB.enabled = false
 	ns.Recolor(row)
 	check(not row.ccExtra:IsShown(), "extra text while colouring is off")
+	check(math.abs(row.Label:GetWidth() - 200) < 0.01, "the name's width given back: " .. tostring(row.Label:GetWidth()))
 	CraftColorsDB.enabled = true
 	EverlookCraftAPI, C_TradeSkillUI = nil, nil
 	C_Item.GetItemCount = oldCount

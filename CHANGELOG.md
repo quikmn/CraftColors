@@ -1,5 +1,8 @@
 # Changelog
 
+## Unreleased
+- Fixed: the skill-up % and count were drawn over long recipe names, and the count was said twice next to the game's own "[11]". They now sit after the game's count, and a long name is shortened just enough to make room.
+
 ## v0.5.0 (2026-11-20)
 - After each yellow and green recipe in the profession window: the chance that one craft raises your skill ("37%", in the recipe's colour). It needs EverlookDB Crafting, which knows each recipe's yellow and gray skill; without it the names are only coloured.
 - After each recipe: how many you can make from your bags ("(4)"). Turn on "Also count my bank and other characters" to see how many more ("(4 +5)"). Where the game already shows the number after the name, it isn't said twice.
