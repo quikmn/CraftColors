@@ -2,6 +2,8 @@
 -- the client uses them) by relative difficulty.
 -- Orange = guaranteed skill-up, yellow = likely, green = rare, gray = none.
 -- /craftcolors opens the settings window; /craftcolors help lists the commands.
+-- CraftColors is now part of EverlookDB Crafting (its "Profession window" page). When a Crafting that has it is loaded,
+-- CraftColors stands down: it draws nothing, says so once, and /ccolors opens that page. Without it, it works as before.
 
 local ADDON, ns = ...
 local UI = LibStub("EverlookUI-1")
@@ -39,6 +41,15 @@ ns.NAMES = NAMES
 
 local db -- CraftColorsDB, set on ADDON_LOADED
 
+-- EverlookDB Crafting (API v3 and later) colours the profession window itself: then only it draws
+function ns.StandDown()
+    local api = rawget(_G, "EverlookCraftAPI")
+    if not api or (api.version or 0) < 3 or type(api.professionColors) ~= "function" then return false end
+    local ok, on = pcall(api.professionColors)
+    return ok and on and true or false
+end
+ns.MERGED = "CraftColors is now part of EverlookDB Crafting (/ecraft colors); you can disable CraftColors."
+
 function ns.ColorFor(difficulty)
     local name = NAMES[difficulty]
     return name and db and db.colors[name], name
@@ -72,7 +83,7 @@ end
 local function Recolor(frame)
     if not db or not frame.Label then return end
     NoteGameColor(frame)
-    if not db.enabled then
+    if not db.enabled or ns.StandDown() then
         -- put back the game's own colour, but only over a tint of ours
         local o = frame.ccGameColor
         if frame.ccApplied and o then frame.Label:SetTextColor(o[1], o[2], o[3]) end
@@ -450,12 +461,23 @@ f:RegisterEvent("ADDON_LOADED")
 f:RegisterEvent("TRADE_SKILL_SHOW")
 f:RegisterEvent("TRADE_SKILL_LIST_UPDATE")
 f:RegisterEvent("BAG_UPDATE_DELAYED")
+f:RegisterEvent("PLAYER_LOGIN")
+local told = false
 f:SetScript("OnEvent", function(_, event, arg1)
     if event == "BAG_UPDATE_DELAYED" then BagsChanged() return end
+    if event == "PLAYER_LOGIN" then
+        if not told and ns.StandDown() then
+            told = true
+            ns.app:Print(ns.MERGED)
+        end
+        return
+    end
     if event == "ADDON_LOADED" and arg1 == ADDON then
         CraftColorsDB = UI.Util.FillDefaults(type(CraftColorsDB) == "table" and CraftColorsDB or {}, ns.DEFAULTS)
         db = CraftColorsDB
         ns.db = db
+        -- tells EverlookDB Crafting that this CraftColors stands down for it (an older one doesn't, so Crafting would)
+        db.mergedInto = "EverlookDBCrafting"
     end
     if event == "ADDON_LOADED" and (arg1 == "Blizzard_TradeSkillUI" or arg1 == "Blizzard_CraftUI" or arg1 == ADDON) then
         TryHookClassic()
@@ -562,4 +584,11 @@ app:Section("main", "CraftColors", function(stack)
     })
 end)
 
-app:RegisterSlash("CRAFTCOLORS") -- /ccolors, also /craftcolors
+-- /ccolors, also /craftcolors. While EverlookDB Crafting draws, they say so and open its page.
+app:RegisterSlash("CRAFTCOLORS", function()
+    if not ns.StandDown() then return false end
+    app:Print(ns.MERGED)
+    local open = SlashCmdList and SlashCmdList.EVERLOOKCRAFT
+    if open then pcall(open, "colors") end
+    return true
+end)

@@ -326,6 +326,40 @@ step("after the name: skill-up chance (with EverlookDB Crafting) and how many yo
 	C_Item.GetItemCount = oldCount
 end)
 
+step("EverlookDB Crafting with the colours built in: CraftColors stands down, says so once, /ccolors opens its page", function()
+	check(CraftColorsDB.mergedInto == "EverlookDBCrafting", "saved variables not marked for EverlookDB Crafting")
+	local color
+	local row = {
+		Label = { SetTextColor = function(_, r, g, b) color = { r, g, b } end },
+		GetElementData = function() return { GetData = function() return { recipeInfo = { relativeDifficulty = Enum.TradeskillRelativeDifficulty.Optimal } } end } end,
+		IsMouseOver = function() return false end,
+	}
+	-- an EverlookDB Crafting without the colours (API v2): CraftColors keeps working
+	EverlookCraftAPI = { version = 2 }
+	ns.Recolor(row)
+	check(color and color[2] == 0.5, "stood down for an older EverlookDB Crafting")
+	color = nil
+	local opened
+	EverlookCraftAPI = { version = 3, professionColors = function() return true end }
+	SlashCmdList.EVERLOOKCRAFT = function(msg) opened = msg end
+	ns.Recolor(row)
+	check(color == nil, "drew while EverlookDB Crafting draws")
+	MOCK.log = {}
+	MOCK.Fire("PLAYER_LOGIN")
+	MOCK.Fire("PLAYER_LOGIN")
+	local n = 0
+	for _, l in ipairs(MOCK.log) do if l:find("now part of EverlookDB Crafting", 1, true) then n = n + 1 end end
+	check(n == 1, "said " .. n .. " times")
+	SlashCmdList.CRAFTCOLORS("")
+	check(opened == "colors" and last():find("you can disable CraftColors", 1, true), "slash: " .. last())
+	check(not (CraftColorsOptionsWindow and CraftColorsOptionsWindow:IsShown()), "own window opened")
+	-- Crafting stood down (it doesn't draw): CraftColors draws again
+	EverlookCraftAPI = { version = 3, professionColors = function() return false end }
+	ns.Recolor(row)
+	check(color and color[2] == 0.5, "nobody draws")
+	EverlookCraftAPI, SlashCmdList.EVERLOOKCRAFT = nil, nil
+end)
+
 step("no Lua errors reported", function()
 	check(#MOCK.errors == 0, table.concat(MOCK.errors, "\n"))
 end)

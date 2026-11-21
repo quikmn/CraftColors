@@ -1,6 +1,7 @@
 # Changelog
 
 ## Unreleased
+- CraftColors is now part of EverlookDB Crafting: the same colours, skill-up chance and counts, on the "Profession window" page of /ecraft, and your CraftColors settings are carried over. While an EverlookDB Crafting that has them is enabled, CraftColors stands down so the window isn't coloured twice: it says so once when you log in, and /ccolors opens that page. You can then disable CraftColors. Without EverlookDB Crafting, CraftColors works as before. This is CraftColors' last version.
 - Fixed: the skill-up % and count were drawn over long recipe names, and the count was said twice next to the game's own "[11]". They now sit after the game's count, and a long name is shortened just enough to make room.
 
 ## v0.5.0 (2026-11-20)

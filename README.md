@@ -1,5 +1,10 @@
 # CraftColors
 
+> **CraftColors is now part of [EverlookDB Crafting](https://github.com/quikmn/EverlookDBCrafting)** (`/ecraft colors`,
+> the "Profession window" page): the same colours, skill-up chance and counts, and your CraftColors settings are
+> carried over. With EverlookDB Crafting enabled, CraftColors stands down by itself and you can disable it. This
+> repository gets no new features.
+
 WoW Forever (interface 16001). Colors recipe names in the profession window by skill-up difficulty: orange, yellow, green, gray. Works in the profession window (Enchanting included) and, should the game open one, the older-style trade skill and craft windows.
 
 ![The Tailoring window with recipe names colored by difficulty: orange, yellow, green and gray](media/screenshot.png)
