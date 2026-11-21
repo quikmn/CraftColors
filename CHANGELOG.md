@@ -1,20 +1,18 @@
 # Changelog
 
 ## v0.6.0 (2026-11-21)
-- CraftColors is now part of EverlookDB Crafting: the same colours, skill-up chance and counts, on the "Profession window" page of /ecraft, and your CraftColors settings are carried over. While an EverlookDB Crafting that has them is enabled, CraftColors stands down so the window isn't coloured twice: it says so once when you log in, and /ccolors opens that page. You can then disable CraftColors. Without EverlookDB Crafting, CraftColors works as before. This is CraftColors' last version.
-- Fixed: the skill-up % and count were drawn over long recipe names, and the count was said twice next to the game's own "[11]". They now sit after the game's count, and a long name is shortened just enough to make room.
+- CraftColors is now part of EverlookDB Crafting (`/ecraft colors`), and your settings carry over. With EverlookDB Crafting enabled, CraftColors steps aside and you can disable it. This is CraftColors' last version.
+- Fixed: the skill-up % and count no longer overlap long recipe names or repeat the game's own count.
 
 ## v0.5.0 (2026-11-20)
-- After each yellow and green recipe in the profession window: the chance that one craft raises your skill ("37%", in the recipe's colour). It needs EverlookDB Crafting, which knows each recipe's yellow and gray skill; without it the names are only coloured.
-- After each recipe: how many you can make from your bags ("(4)"). Turn on "Also count my bank and other characters" to see how many more ("(4 +5)"). Where the game already shows the number after the name, it isn't said twice.
-- New settings for both, in /ccolors.
+- After each yellow and green recipe: your chance of a skill-up ("37%"). Needs EverlookDB Crafting; without it the names are only coloured.
+- After each recipe: how many you can make from your bags ("(4)"), optionally with your bank and other characters ("(4 +5)").
 
 ## v0.4.0 (2026-11-20)
-- Settings window: switches, buttons and sliders use a softer shade of the accent colour, an on switch has a dark knob so it stands out, and boxes have cleaner rounded edges.
-
-- The settings window no longer shows the developer check of the selected recipe; type `/ccolors debug` for it when reporting a bug (`/ccolors check` still works).
+- Softer settings window colours and clearer switches.
+- The recipe check moved out of the settings window to `/ccolors debug`.
 - Turning the colours off no longer leaves a recipe stuck in its mouse-over colour.
-- Recipe names are also coloured if a profession opens in the older-style trade skill or craft window instead of the usual profession window.
+- Recipe names are also coloured in the older-style trade skill and craft windows.
 
 ## v0.3.0 (2026-11-18)
 
