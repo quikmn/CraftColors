@@ -37,8 +37,18 @@
 -- for an AI assistant; "/x apply" takes its answer back (see "AI help" below and COMMANDS.md).
 -- An addon with its own settings window hands its settings over with app:ProvideSettings (EverlookUI 11): then chat,
 -- "/x ai" and "/x apply" know them too, and opts.combat = "queue" holds changes made in combat until it ends.
+--
+-- A main window (EverlookUI 13): the same window can hold the addon's own pages next to its settings. A section with
+-- opts.panel = true is a page the addon draws itself (a list, a log, a home page) in an empty frame that fills the
+-- page area; spec.groups = { { id = "main" }, { id = "settings", title = "Settings" } } with opts.group puts the
+-- sidebar rows in groups, each titled group under a small heading; spec.onPage(app, id) hears every page change.
+--
+-- Windows (EverlookUI 14): every window drawn with UI.WindowChrome, and every app's window, is listed in UI.windows
+-- (frame -> info), so a window manager (Everlook Bar's taskbar) can find, minimize and tile them. Nothing else changes
+-- for the window. UI.RegisterWindow(frame, { title = "Name" or fn(frame), icon = ..., noTaskbar = true }) adds to or
+-- changes that; UI.apps lists every app made by this copy or a later one (name, slash, pages for a Start menu).
 local LIB_ADDON = ... -- the folder of the addon whose copy this is (its Media\ sits next to this file)
-local MAJOR, MINOR = "EverlookUI-1", 11
+local MAJOR, MINOR = "EverlookUI-1", 14
 local UI = LibStub:NewLibrary(MAJOR, MINOR)
 if not UI then return end
 UI.version = MINOR
@@ -433,8 +443,49 @@ local function Tooltip(frame, title, body)
 end
 UI.Tooltip = Tooltip
 
+------------------------------------------------------------------------
+-- Windows and apps a window manager can find (EverlookUI 14). The tables survive library upgrades. A window is
+-- listed when it is drawn (UI.WindowChrome) or made by an app; whoever manages windows decides which listed frames
+-- are real windows (shown, movable, big enough) and reads the info:
+--   title      a string, or function(frame) -> string (default: the app's name, the frame's .title text, its name)
+--   icon       an icon name (UI.IconNames), texture path or file ID (default: the app's addon icon)
+--   app        the app the window belongs to
+--   noTaskbar  true: never list it (a toast, a menu, a card)
+-- frame.eluiMinimizing is true while a window manager hides the window to minimize it (it comes back as it was):
+-- an OnHide that clears state can keep it then.
+------------------------------------------------------------------------
+UI.windows = UI.windows or setmetatable({}, { __mode = "k" })
+UI.apps = UI.apps or {}
+UI.windowListeners = UI.windowListeners or {}
+
+function UI.RegisterWindow(frame, info)
+	if type(frame) ~= "table" then return nil end
+	local w = UI.windows[frame]
+	if not w then
+		w = {}
+		UI.windows[frame] = w
+	end
+	if type(info) == "table" then
+		for k, v in pairs(info) do w[k] = v end
+	end
+	for _, fn in ipairs(UI.windowListeners) do pcall(fn, frame, w) end
+	return w
+end
+
+function UI.UnregisterWindow(frame)
+	if type(frame) == "table" then UI.windows[frame] = nil end
+end
+
+function UI.WindowInfo(frame) return type(frame) == "table" and UI.windows[frame] or nil end
+
+-- fn(frame, info) runs for every window listed (or changed) from now on.
+function UI.OnWindowRegistered(fn)
+	if type(fn) == "function" then UI.windowListeners[#UI.windowListeners + 1] = fn end
+end
+
 -- The window look: a rounded slate box with a 1 px rim and a thin accent line along the top.
 local function WindowChrome(f, T)
+	UI.RegisterWindow(f)
 	f.bgFill, f.bgEdge = U.RoundBox(f, 8, T.bg, T.border)
 	local line = U.Solid(f, "ARTWORK", rgba(T.accent))
 	line:SetHeight(2)
@@ -1563,6 +1614,12 @@ function UI.List(stack, opt)
 			GameTooltip:Hide()
 		end)
 		r:SetScript("OnClick", function(self) if self.item ~= nil and opt.onClick then opt.onClick(self.item) end end)
+		-- opt.drag(item): drag the row (icon or anywhere on it) to put the item on the cursor, e.g. a macro onto an
+		-- action bar (EverlookUI 12). The game doesn't send a click after a drag starts, so onClick still works.
+		if opt.drag then
+			r:RegisterForDrag("LeftButton")
+			r:SetScript("OnDragStart", function(self) if self.item ~= nil then opt.drag(self.item) end end)
+		end
 		f.rows[i] = r
 		return r
 	end
@@ -2102,6 +2159,7 @@ function UI:NewApp(spec)
 	app.settings, app.settingOrder = {}, {}
 	app.commands, app.commandOrder = {}, {}
 	if spec.settingsPanel ~= false then app:RegisterSettingsPanel() end
+	UI.apps[#UI.apps + 1] = app
 	return app
 end
 
@@ -2870,11 +2928,45 @@ end
 -- opts (EverlookUI 7): icon (a name from UI.IconNames such as "gear", or any texture path or file ID; default from the
 -- title, UI.PageIcon) and desc (the line under the page title; default: the sub-line of the page's first heading
 -- when that heading repeats the page title).
+-- EverlookUI 13: opts.group (the sidebar group, from spec.groups; default the last group) and opts.panel = true: a page
+-- of the addon's own instead of a card stack. build(holder, app, section) then gets an empty frame filling the page
+-- area under the top bar (no page header, no footer bar), once; opts.show(holder, app, section) runs each time the
+-- page shows and opts.hide(holder, app, section) when another page (or the search's results) takes its place. A panel
+-- page has no settings to search; the search box still searches every settings page.
 function App:Section(id, title, build, opts)
 	assert(not self.sections[id], "duplicate section " .. id)
-	self.sections[id] = { id = id, title = title, build = build }
+	local s = { id = id, title = title, build = build }
+	if type(opts) == "table" then
+		s.group, s.panel, s.show, s.hide = opts.group, opts.panel and true or nil, opts.show, opts.hide
+	end
+	self.sections[id] = s
 	self.order[#self.order + 1] = id
 	if opts then self:SectionInfo(id, opts) end
+end
+
+-- The pages in sidebar order: group by group (spec.groups), in the order they were added within a group.
+function App:NavOrder()
+	local groups = self.spec.groups
+	if type(groups) ~= "table" or #groups == 0 then return self.order end
+	local rank, fallback = {}, groups[#groups].id
+	for i, g in ipairs(groups) do rank[g.id] = i end
+	local out, pos = {}, {}
+	for i, id in ipairs(self.order) do out[i] = id; pos[id] = i end
+	local function groupOf(id) local g = self.sections[id].group; return rank[g] and g or fallback end
+	table.sort(out, function(a, b)
+		local ga, gb = rank[groupOf(a)], rank[groupOf(b)]
+		if ga ~= gb then return ga < gb end
+		return pos[a] < pos[b]
+	end)
+	return out
+end
+
+-- The group a page is listed under (nil without spec.groups).
+function App:GroupOf(id)
+	local groups, s = self.spec.groups, self.sections[id]
+	if type(groups) ~= "table" or #groups == 0 or not s then return nil end
+	for _, g in ipairs(groups) do if g.id == s.group then return g end end
+	return groups[#groups]
 end
 
 -- Change a page's icon, description or title later: app:SectionInfo("general", { icon = "gear", desc = "..." }).
@@ -2951,7 +3043,7 @@ end
 -- Build a page's widgets, hidden (ShowSection shows it; the search reads it).
 function App:BuildSection(id)
 	local f, s = self.window, self.sections[id]
-	if not f or not s or s.scroll then return s end
+	if not f or not s or s.scroll or s.panel then return s end
 	s.scroll = UI.ScrollPage(f.content)
 	s.scroll:Hide()
 	local width = f.contentWidth - 24 -- the scroll bar takes the right edge
@@ -2977,7 +3069,7 @@ function App:EnsureSearchIndex(one)
 	if not self.window then return false end
 	for _, id in ipairs(self.order) do
 		local s = self.sections[id]
-		if not s.scroll and not s.searchFailed then
+		if not s.scroll and not s.searchFailed and not s.panel then
 			local ok, err = pcall(self.BuildSection, self, id)
 			if not ok then
 				DropSection(self, s)
@@ -3055,6 +3147,8 @@ function App:Search(text)
 		self.searching = true
 		ClosePopup()
 		for _, s in pairs(self.sections) do if s.scroll then s.scroll:Hide() end end
+		self:HidePanels()
+		self:PanelChrome(false)
 	end
 	local entries = self:SearchEntries()
 	self.searchQuery = q
@@ -3141,8 +3235,9 @@ function App:ShowResults(results, q, entries)
 	R.UpdateBar()
 end
 
--- End the search: the controls go back and the page you were on shows again.
-function App:StopSearch()
+-- End the search: the controls go back and the page you were on shows again (not with `leaving`: another page is
+-- about to show).
+function App:StopSearch(leaving)
 	local f = self.window
 	if f and f.searchBox and f.searchBox:GetText() ~= "" then f.searchBox:SetText("") end
 	if not self.searching then return end
@@ -3151,6 +3246,10 @@ function App:StopSearch()
 	ClosePopup()
 	f.results:Hide()
 	local s = self.current and self.sections[self.current]
+	if s and s.panel then
+		if not leaving then self:ShowSection(s.id) end
+		return
+	end
 	if s and s.scroll then
 		s.stack:RefreshAll()
 		s.scroll:Show()
@@ -3476,6 +3575,7 @@ end
 
 function App:CreateWindow()
 	local app, T, spec = self, self.T, self.spec
+	self.order = self:NavOrder()
 	local sidebar = #self.order > 1
 	local W = WindowWidth(spec, sidebar)
 	local H = (spec.height or 560) + 40 -- room for the footer bar
@@ -3500,6 +3600,7 @@ function App:CreateWindow()
 	f:Hide()
 	self.window = f
 	RestorePosition(self, f)
+	UI.RegisterWindow(f, { app = self })
 	W = math.floor((f:GetWidth() or W) + 0.5) -- a size the player gave it last time
 	WindowChrome(f, T)
 
@@ -3576,13 +3677,27 @@ function App:CreateWindow()
 			navTop = headBottom + 14 + 26 + 14
 		end
 
-		-- the pages
-		f.navButtons = {}
+		-- the pages, group by group; a titled group under a small heading (EverlookUI 13)
+		f.navButtons, f.navHeads = {}, {}
+		local y, lastGroup = navTop, nil
 		for i, id in ipairs(self.order) do
 			local s = self.sections[id]
+			local g = self:GroupOf(id)
+			if g ~= lastGroup then
+				if g and g.title then
+					if i > 1 then y = y + 8 end
+					local head = Text(side, T.fontSmall, T.muted)
+					head:SetPoint("TOPLEFT", 18, -y - 4)
+					head:SetText(tostring(g.title):upper())
+					f.navHeads[#f.navHeads + 1] = head
+					y = y + 22
+				end
+				lastGroup = g
+			end
 			local b = CreateFrame("Button", nil, side)
 			b:SetHeight(30)
-			b:SetPoint("TOPLEFT", 8, -navTop - (i - 1) * 32)
+			b:SetPoint("TOPLEFT", 8, -y)
+			y = y + 32
 			b:SetPoint("RIGHT", -8, 0)
 			b.hover = U.Round(b, 5, "BACKGROUND")
 			b.hover:SetAllPoints(b)
@@ -3633,6 +3748,12 @@ function App:CreateWindow()
 		line:SetHeight(1)
 		line:SetPoint("BOTTOMLEFT", 14, 30 + #tools * 26 + 6)
 		line:SetPoint("RIGHT", side, "RIGHT", -14, 0)
+		-- tall enough that the last page never runs into the tools (EverlookUI 14): grow, and never resize smaller
+		local need = math.ceil(y + 14 + 30 + #tools * 26 + 6 + 8)
+		if need > MIN_H then
+			if f.SetResizeBounds then f:SetResizeBounds(W, need) elseif f.SetMinResize then f:SetMinResize(W, need) end
+		end
+		if (f:GetHeight() or 0) < need then f:SetHeight(need) end
 
 		-- the page header
 		f.pageTitle = Text(f, T.fontHuge, T.text)
@@ -3683,6 +3804,13 @@ function App:CreateWindow()
 
 	content:SetPoint("TOPLEFT", CL, -top)
 	content:SetPoint("BOTTOMRIGHT", -16, FOOTER_H + 8)
+
+	-- the area of a panel page (EverlookUI 13): everything right of the sidebar under the top bar
+	local panelArea = CreateFrame("Frame", nil, f)
+	panelArea:SetPoint("TOPLEFT", f, "TOPLEFT", sidebar and (SIDEBAR_W + 1) or 1, -(f.headerOffset or (sidebar and 0 or top)))
+	panelArea:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", -1, 1)
+	panelArea:Hide()
+	f.panelArea = panelArea
 
 	-- the footer bar: profile picker (or the addon's own control) and, in a one-page window, the tools on the
 	-- left; Undo on the right
@@ -3740,6 +3868,7 @@ function App:CreateWindow()
 		SavePosition(app, f)
 	end)
 	f.resizeGrip = grip
+	grip:SetFrameLevel((f:GetFrameLevel() or 1) + 60) -- above a panel page's own frames
 	f:SetScript("OnSizeChanged", function(_, w) app:OnWindowSized(w) end)
 
 	-- Ctrl+Z is Undo (Ctrl+F, set by CreateSearch, focuses the search box)
@@ -3759,8 +3888,10 @@ function App:CreateWindow()
 	f:SetScript("OnHide", function()
 		ClosePopup()
 		f.searchBox:ClearFocus()
-		app:StopSearch()
-		app.history = nil -- Undo covers one visit of the window
+		if not f.eluiMinimizing then -- minimized (EverlookUI 14): it comes back with its search and Undo
+			app:StopSearch()
+			app.history = nil -- Undo covers one visit of the window
+		end
 		if spec.onHide then spec.onHide(app) end
 	end)
 	UI.CloseOnEscape(f)
@@ -3887,6 +4018,7 @@ function App:UpdatePageHeader()
 	if not f or not f.pageTitle then return end
 	local s = self.current and self.sections[self.current]
 	for _, d in pairs(self.previews or {}) do if d.frame then d.frame:Hide() end end
+	if s and s.panel and not self.searching then return end
 	local def = s and self:PreviewFor(s.id)
 	local pw, ph = 0, 0
 	if def then
@@ -4006,31 +4138,78 @@ function App:PaintNav()
 	end
 end
 
+-- A panel page's frame hides (its hide callback runs) unless it is `keep`'s.
+function App:HidePanels(keep)
+	for sid, other in pairs(self.sections) do
+		if other.holder and sid ~= keep and other.holder:IsShown() then
+			other.holder:Hide()
+			if other.hide then
+				local ok, err = pcall(other.hide, other.holder, self, other)
+				if not ok then report(err) end
+			end
+		end
+	end
+end
+
+-- Over a panel page: no page header, no footer bar, the panel area instead of the card pages.
+function App:PanelChrome(panel)
+	local f = self.window
+	if not f then return end
+	if f.pageTitle then f.pageTitle:SetShown(not panel) end
+	if f.pageDesc and panel then f.pageDesc:Hide() end
+	if f.footerBar then f.footerBar:SetShown(not panel) end
+	if f.content then f.content:SetShown(not panel) end
+	if f.panelArea then f.panelArea:SetShown(panel) end
+end
+
 function App:ShowSection(id)
 	local f = self.window
 	if not f then return end
 	local s = self.sections[id]
 	if not s then return end
 	ClosePopup()
-	if self.searching then self:StopSearch() end -- a page picked in the sidebar ends the search
+	if self.searching then self:StopSearch(true) end -- a page picked in the sidebar ends the search
 	for sid, other in pairs(self.sections) do
 		if other.scroll then other.scroll:SetShown(sid == id) end
 	end
+	self:HidePanels(id)
 	self.current = id
 	self:PaintNav()
-	if not s.scroll then
-		self:BuildSection(id)
+	if s.panel then
+		self:PanelChrome(true)
+		for _, d in pairs(self.previews or {}) do if d.frame then d.frame:Hide() end end
+		if not s.holder then
+			s.holder = CreateFrame("Frame", nil, f.panelArea)
+			s.holder:SetAllPoints(f.panelArea)
+			s.holder.eluiTheme = self.T
+			local ok, err = pcall(s.build, s.holder, self, s)
+			if not ok then report(err) end
+		end
+		s.holder:Show()
+		if s.show then
+			local ok, err = pcall(s.show, s.holder, self, s)
+			if not ok then report(err) end
+		end
 	else
-		s.stack:RefreshAll()
+		self:PanelChrome(false)
+		if not s.scroll then
+			self:BuildSection(id)
+		else
+			s.stack:RefreshAll()
+		end
+		self:UpdatePageHeader()
+		s.scroll:Show()
 	end
-	self:UpdatePageHeader()
-	s.scroll:Show()
+	if self.spec.onPage then
+		local ok, err = pcall(self.spec.onPage, self, id)
+		if not ok then report(err) end
+	end
 end
 
 -- Build a section again from scratch (its rows depend on data).
 function App:RebuildSection(id)
 	local s = self.sections[id]
-	if not s or not s.scroll then return end
+	if not s or not s.scroll or s.panel then return end
 	if self.searching then self:ReturnBorrowed() end
 	DropSection(self, s)
 	if self.searching then
