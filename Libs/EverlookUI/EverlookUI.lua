@@ -3179,6 +3179,8 @@ function App:Search(text)
 	self.searchQuery = q
 	local results = Search.Match(entries, q, Listed)
 	self:ShowResults(results, q, entries)
+	self.searchLit = results[1] and results[1].entry and results[1].entry.sectionId or nil
+	self:PaintNav()
 	if f.pageTitle then
 		for _, d in pairs(self.previews or {}) do if d.frame then d.frame:Hide() end end
 		f.pageTitle:SetText("Search results")
@@ -3267,6 +3269,8 @@ function App:StopSearch(leaving)
 	if f and f.searchBox and f.searchBox:GetText() ~= "" then f.searchBox:SetText("") end
 	if not self.searching then return end
 	self.searching = nil
+	self.searchLit = nil
+	self:PaintNav()
 	self:ReturnBorrowed()
 	ClosePopup()
 	f.results:Hide()
@@ -3747,11 +3751,11 @@ function App:CreateWindow()
 			b.text:SetWordWrap(false)
 			b.text:SetText(s.title)
 			b:SetScript("OnEnter", function(self)
-				if app.current ~= id then self.hover:Show(); self.text:SetTextColor(rgba(T.text)) end
+				if not self.bg:IsShown() then self.hover:Show(); self.text:SetTextColor(rgba(T.text)) end
 			end)
 			b:SetScript("OnLeave", function(self)
 				self.hover:Hide()
-				if app.current ~= id then self.text:SetTextColor(rgba(T.muted)) end
+				if not self.bg:IsShown() then self.text:SetTextColor(rgba(T.muted)) end
 			end)
 			b:SetScript("OnClick", function() app:ShowSection(id) end)
 			f.navButtons[id] = b
@@ -4154,8 +4158,11 @@ end
 function App:PaintNav()
 	local f = self.window
 	if not f or not f.navButtons then return end
+	-- while searching, the top result's page is lit (the sidebar follows the results; EverlookUI 15)
+	local lit = self.current
+	if self.searching then lit = self.searchLit end
 	for sid, b in pairs(f.navButtons) do
-		local active = sid == self.current
+		local active = sid == lit
 		b.bg:SetShown(active)
 		b.bar:SetShown(active)
 		b.text:SetTextColor(rgba(active and self.T.text or self.T.muted))
