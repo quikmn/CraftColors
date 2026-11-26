@@ -48,7 +48,7 @@
 -- for the window. UI.RegisterWindow(frame, { title = "Name" or fn(frame), icon = ..., noTaskbar = true }) adds to or
 -- changes that; UI.apps lists every app made by this copy or a later one (name, slash, pages for a Start menu).
 local LIB_ADDON = ... -- the folder of the addon whose copy this is (its Media\ sits next to this file)
-local MAJOR, MINOR = "EverlookUI-1", 15
+local MAJOR, MINOR = "EverlookUI-1", 16
 local UI = LibStub:NewLibrary(MAJOR, MINOR)
 if not UI then return end
 UI.version = MINOR
@@ -3907,7 +3907,48 @@ function App:CreateWindow()
 		return searchKey and searchKey(self, key)
 	end
 
+	-- Whichever window you click comes to the front (EverlookUI 16): a click on another game window (the auction house,
+	-- bags, the spellbook: a top-level panel below DIALOG) sends this one just behind it, a click on this one brings it
+	-- forward again. Our own menus and dialogs are DIALOG or higher, so clicking them never sends it back.
+	local clicks = CreateFrame("Frame")
+	local function topOf(fr)
+		local p = fr.GetParent and fr:GetParent()
+		while p and p ~= UIParent do
+			fr, p = p, p.GetParent and p:GetParent()
+		end
+		return fr
+	end
+	local BELOW = { BACKGROUND = true, LOW = true, MEDIUM = true, HIGH = true }
+	clicks:SetScript("OnEvent", function()
+		if not f:IsShown() then return end
+		local fo
+		if GetMouseFoci then
+			local list = GetMouseFoci()
+			fo = list and list[1]
+		elseif GetMouseFocus then
+			fo = GetMouseFocus()
+		end
+		if not fo or fo == WorldFrame or fo == UIParent then return end
+		local ok, top = pcall(topOf, fo)
+		if not ok or not top or top == WorldFrame then return end
+		if top == f then
+			if f:GetFrameStrata() ~= "DIALOG" then f:SetFrameStrata("DIALOG") end
+			f:Raise()
+			return
+		end
+		local strata = top.GetFrameStrata and top:GetFrameStrata()
+		local name = top.GetName and top:GetName()
+		local panel = (top.IsToplevel and top:IsToplevel()) or (name and type(UIPanelWindows) == "table" and UIPanelWindows[name])
+		if not (BELOW[strata] and panel) then return end
+		f:SetFrameStrata(strata)
+		f:Lower()
+		if top.Raise then top:Raise() end
+	end)
+	f.eluiClicks = clicks
+
 	f:SetScript("OnShow", function()
+		f:SetFrameStrata("DIALOG") -- opens in front
+		clicks:RegisterEvent("GLOBAL_MOUSE_DOWN")
 		app.history = nil
 		app:RefreshUndo()
 		app:RefreshButtons()
@@ -3915,6 +3956,7 @@ function App:CreateWindow()
 		app:WarmSearch()
 	end)
 	f:SetScript("OnHide", function()
+		clicks:UnregisterEvent("GLOBAL_MOUSE_DOWN")
 		ClosePopup()
 		f.searchBox:ClearFocus()
 		if not f.eluiMinimizing then -- minimized (EverlookUI 14): it comes back with its search and Undo
