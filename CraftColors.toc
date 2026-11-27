@@ -2,7 +2,7 @@
 ## Title: CraftColors
 ## Notes: Colors recipe names in the profession window by skill-up difficulty (orange / yellow / green / gray).
 ## Author: quikmn
-## Version: 0.6.0
+## Version: 0.6.1
 ## SavedVariables: CraftColorsDB
 ## IconTexture: Interface\Icons\Trade_Engineering
 

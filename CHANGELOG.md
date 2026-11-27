@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## v0.6.1 (2026-11-27)
 - Small fixes to the settings window: whichever window you click now comes to the front, and the settings list follows your search.
 
 ## v0.6.0 (2026-11-21)
