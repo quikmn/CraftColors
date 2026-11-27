@@ -1,5 +1,8 @@
 # Changelog
 
+## Unreleased
+- Small fixes to the settings window: whichever window you click now comes to the front, and the settings list follows your search.
+
 ## v0.6.0 (2026-11-21)
 - CraftColors is now part of EverlookDB Crafting (`/ecraft colors`), and your settings carry over. With EverlookDB Crafting enabled, CraftColors steps aside and you can disable it. This is CraftColors' last version.
 - Fixed: the skill-up % and count no longer overlap long recipe names or repeat the game's own count.
